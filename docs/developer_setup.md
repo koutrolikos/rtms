@@ -1,4 +1,4 @@
-# Developer Setup
+i # Developer Setup
 
 ## Install
 
@@ -47,10 +47,18 @@ Example:
 range-test-server
 ```
 
+By default the server binds to `0.0.0.0:8000` and auto-detects a LAN URL for agent-facing links.
+If the detected address is wrong, set:
+
+```bash
+export RANGE_TEST_SERVER_PUBLIC_BASE_URL="http://192.168.1.50:8000"
+```
+
 Key env vars:
 
 - `RANGE_TEST_SERVER_HOST`
 - `RANGE_TEST_SERVER_PORT`
+- `RANGE_TEST_SERVER_PUBLIC_BASE_URL`
 - `RANGE_TEST_SERVER_DATA_DIR`
 - `RANGE_TEST_SERVER_DB_URL`
 - `RANGE_TEST_REPO_CONFIG`
@@ -59,7 +67,22 @@ Key env vars:
 ## Run Agent
 
 ```bash
+export RANGE_TEST_SERVER_URL="http://192.168.1.50:8000"
 range-test-agent run
+```
+
+From Windows PowerShell:
+
+```powershell
+$env:RANGE_TEST_SERVER_URL = "http://192.168.1.50:8000"
+$env:RANGE_TEST_OPENOCD_TARGET_CFG = "target/stm32g4x.cfg"
+range-test-agent run
+```
+
+Verify connectivity from the agent machine before starting the agent:
+
+```bash
+curl http://192.168.1.50:8000/healthz
 ```
 
 Key env vars:
@@ -74,6 +97,20 @@ Key env vars:
 - `RANGE_TEST_OPENOCD_INTERFACE_CFG`
 - `RANGE_TEST_OPENOCD_TARGET_CFG`
 - `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE`
+
+For STM32G474-based boards, the correct default OpenOCD target script is:
+
+```bash
+export RANGE_TEST_OPENOCD_TARGET_CFG="target/stm32g4x.cfg"
+```
+
+If OpenOCD is installed on Windows but not on `PATH`, point the agent at the
+binary directly:
+
+```powershell
+$env:RANGE_TEST_OPENOCD_BIN = "C:\openocd\xpack-openocd-0.12.0-7\bin\openocd.exe"
+$env:OPENOCD_SCRIPTS = "C:\openocd\xpack-openocd-0.12.0-7\openocd\scripts"
+```
 
 ## Local Demo Mode
 
@@ -99,4 +136,3 @@ When the authoritative firmware logging document arrives:
 1. Update the parser rules in `server/app/services/parsing.py`.
 2. Update metric computation in the same module.
 3. Add parser fixtures/tests that encode the spec’s exact line formats and expected metrics.
-

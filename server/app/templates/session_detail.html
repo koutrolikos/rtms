@@ -300,5 +300,48 @@
     </tbody>
   </table>
 </section>
-{% endblock %}
 
+<section class="panel">
+  <div class="panel-head">
+    <h3>Jobs</h3>
+    <p class="muted">Build and execution job results with failure diagnostics.</p>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Created</th>
+        <th>Type</th>
+        <th>Agent</th>
+        <th>Role</th>
+        <th>Status</th>
+        <th>Failure</th>
+        <th>Diagnostics</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for job in jobs %}
+      <tr>
+        <td>{{ job.created_at }}</td>
+        <td>{{ job.type }}</td>
+        <td>{{ job.agent_id }}</td>
+        <td>{{ job.role or "-" }}</td>
+        <td>{{ job.status }}</td>
+        <td>{{ job.failure_reason or "-" }}</td>
+        <td>
+          {% if job.diagnostics_json %}
+          <details>
+            <summary>show</summary>
+            <pre>{{ job.diagnostics_json }}</pre>
+          </details>
+          {% else %}
+          -
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="muted">No jobs yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

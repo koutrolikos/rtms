@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import shlex
 import subprocess
 from pathlib import Path
 
@@ -117,7 +116,7 @@ class OpenOcdExecutor:
         if context.probe_serial:
             command.extend(["-c", f"hla_serial {context.probe_serial}"])
         command.extend(self.settings.openocd.extra_args)
-        command.extend(["-c", f"program {shlex.quote(str(image_path))} verify reset exit"])
+        command.extend(["-c", self._program_command(image_path)])
         try:
             completed = subprocess.run(
                 command,
@@ -126,7 +125,19 @@ class OpenOcdExecutor:
                 timeout=self.settings.openocd.flash_timeout_seconds,
             )
         except FileNotFoundError as exc:
-            raise PrepareFailure("openocd_launch_failed", {"error": str(exc), "command": command}) from exc
+            raise PrepareFailure(
+                "openocd_launch_failed",
+                {
+                    "error": str(exc),
+                    "command": command,
+                    "openocd_bin": self.settings.openocd.openocd_bin,
+                    "hint": (
+                        "OpenOCD executable was not found. Install OpenOCD on the agent host "
+                        "or set RANGE_TEST_OPENOCD_BIN to the full path of the binary, for example "
+                        r"C:\Program Files\OpenOCD\bin\openocd.exe"
+                    ),
+                },
+            ) from exc
         except subprocess.TimeoutExpired as exc:
             raise PrepareFailure("flash_failed", {"error": "timeout", "command": command}) from exc
         log_path.write_text(
@@ -147,17 +158,28 @@ class OpenOcdExecutor:
             stderr = completed.stderr.lower()
             if "no device" in stderr or "not found" in stderr:
                 raise PrepareFailure("probe_not_found", {"stderr": completed.stderr[-4000:]})
+            diagnostics = {
+                "return_code": completed.returncode,
+                "stdout": completed.stdout[-4000:],
+                "stderr": completed.stderr[-4000:],
+                "openocd_target_cfg": self.settings.openocd.target_cfg,
+            }
+            if "cannot identify target as a stm32 family" in stderr or "auto_probe failed" in stderr:
+                diagnostics["hint"] = (
+                    "OpenOCD target config may not match the MCU family. "
+                    "STM32G474 targets should use target/stm32g4x.cfg."
+                )
             raise PrepareFailure(
                 "flash_failed",
-                {
-                    "return_code": completed.returncode,
-                    "stdout": completed.stdout[-4000:],
-                    "stderr": completed.stderr[-4000:],
-                },
+                diagnostics,
             )
         text = f"{completed.stdout}\n{completed.stderr}".lower()
         if not any(marker in text for marker in self.settings.openocd.verify_markers):
             raise PrepareFailure("verify_failed", {"stdout": completed.stdout[-4000:], "stderr": completed.stderr[-4000:]})
+
+    def _program_command(self, image_path: Path) -> str:
+        normalized_path = str(image_path).replace("\\", "/")
+        return f"program {{{normalized_path}}} verify reset exit"
 
     def _resolve_rtt_symbol(self, manifest: ArtifactBundleManifest) -> None:
         if manifest.flash.rtt_symbol:
@@ -165,4 +187,3 @@ class OpenOcdExecutor:
         if manifest.flash.elf_path:
             return
         raise PrepareFailure("rtt_symbol_lookup_failed", {"message": "manifest missing RTT symbol and ELF path"})
-

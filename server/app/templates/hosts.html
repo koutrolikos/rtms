@@ -6,6 +6,16 @@
     <h2>Agents</h2>
     <p class="muted">Connected build/flash/capture hosts. One active test session at a time.</p>
   </div>
+  <div class="meta">
+    <div>
+      <dt>Server Listen Host</dt>
+      <dd>{{ settings.host }}:{{ settings.port }}</dd>
+    </div>
+    <div>
+      <dt>Agent/Public URL</dt>
+      <dd><code>{{ settings.effective_public_base_url }}</code></dd>
+    </div>
+  </div>
   <div class="card-grid">
     {% for host in hosts %}
     <article class="card">
@@ -56,4 +66,3 @@
   </table>
 </section>
 {% endblock %}
-

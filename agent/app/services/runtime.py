@@ -10,6 +10,7 @@ from agent.app.executors.build import BuildExecutor
 from agent.app.executors.capture import RunningCapture
 from agent.app.executors.openocd import OpenOcdExecutor
 from agent.app.services.api_client import ServerClient
+from agent.app.services.bundles import create_prebuilt_elf_bundle
 from agent.app.storage.local_state import LocalStateStore
 from shared.enums import AgentStatus, ArtifactOriginType, JobType, RawArtifactType, Role
 from shared.schemas import (
@@ -220,6 +221,12 @@ class AgentRuntime:
             self.running_captures.pop(job_id, None)
 
     def run(self) -> None:
+        logger.info(
+            "agent starting with server_url=%s name=%s hostname=%s",
+            self.settings.server_url,
+            self.settings.name,
+            self.settings.hostname,
+        )
         self.register()
         logger.info("agent registered as %s", self.agent_id)
         while True:
@@ -253,3 +260,57 @@ class AgentRuntime:
         )
         if not result.success:
             raise RuntimeError(result.failure_reason)
+
+    def upload_prebuilt_artifact(
+        self,
+        *,
+        session_id: str,
+        role: Role,
+        elf_path: str,
+        git_sha: str | None,
+        source_repo: str | None,
+        rtt_symbol: str | None,
+        dirty_worktree: bool,
+    ) -> str:
+        resolved_elf_path = Path(elf_path).expanduser().resolve()
+        if not resolved_elf_path.exists():
+            raise FileNotFoundError(f"prebuilt ELF not found: {resolved_elf_path}")
+        if not resolved_elf_path.is_file():
+            raise ValueError(f"prebuilt ELF path is not a file: {resolved_elf_path}")
+        output_dir = self.settings.build_root / session_id / f"prebuilt-{role.value.lower()}"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        bundle_path = output_dir / f"{role.value.lower()}-prebuilt-bundle.zip"
+        manifest = create_prebuilt_elf_bundle(
+            output_path=bundle_path,
+            session_id=session_id,
+            artifact_id=None,
+            role_hint=role,
+            elf_path=resolved_elf_path,
+            git_sha=git_sha,
+            source_repo=source_repo,
+            producing_agent_id=None,
+            rtt_symbol=rtt_symbol,
+            build_metadata={
+                "artifact_kind": "prebuilt_elf",
+                "source_path": str(resolved_elf_path),
+                "dirty_worktree": dirty_worktree,
+            },
+        )
+        upload = self.client.upload_artifact_bundle(
+            bundle_path=bundle_path,
+            session_id=session_id,
+            artifact_id=None,
+            origin_type=ArtifactOriginType.MANUAL_UPLOAD,
+            producing_agent_id=None,
+            role_hint=role,
+            source_repo=source_repo,
+            git_sha=git_sha,
+        )
+        logger.info(
+            "uploaded prebuilt artifact artifact_id=%s role=%s source=%s",
+            upload.artifact_id,
+            role.value,
+            resolved_elf_path,
+        )
+        logger.debug("uploaded prebuilt manifest: %s", manifest.model_dump(mode="json"))
+        return upload.artifact_id

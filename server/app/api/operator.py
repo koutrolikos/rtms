@@ -25,6 +25,7 @@ from server.app.services.sessions import (
     request_build,
     session_artifacts,
     session_events,
+    session_jobs,
     session_report,
     session_roles,
     start_session,
@@ -70,6 +71,7 @@ def hosts_overview(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
             "hosts": hosts,
             "host_status": {host.id: visible_agent_status(host, settings) for host in hosts},
             "sessions": list_sessions(db),
+            "settings": settings,
         },
     )
 
@@ -127,6 +129,7 @@ def session_detail(request: Request, session_id: str, db: Session = Depends(get_
             "roles": session_roles(db, session.id),
             "annotations": annotations(db, session.id),
             "events": session_events(db, session.id),
+            "jobs": session_jobs(db, session.id),
             "raw_artifacts": raw_artifacts(db, session.id),
             "report": report,
             "repos": github.list_repos(),
@@ -217,7 +220,7 @@ def session_build_action(
 
 @router.post("/sessions/{session_id}/start")
 def session_start_action(request: Request, session_id: str, db: Session = Depends(get_db)) -> RedirectResponse:
-    base_url = str(request.base_url).rstrip("/")
+    base_url = get_settings().effective_public_base_url
     start_session(db, settings=get_settings(), session_id=session_id, base_url=base_url)
     return RedirectResponse(url=f"/sessions/{session_id}", status_code=303)
 
@@ -356,7 +359,7 @@ def start_session_json(request: Request, session_id: str, db: Session = Depends(
         db,
         settings=get_settings(),
         session_id=session_id,
-        base_url=str(request.base_url).rstrip("/"),
+        base_url=get_settings().effective_public_base_url,
     )
     return {"id": session.id, "status": session.status}
 
@@ -437,6 +440,17 @@ def timeline_json(session_id: str, db: Session = Depends(get_db)) -> list[dict]:
 def repos_json() -> list[dict]:
     github = _github()
     return [repo.model_dump(mode="json") for repo in github.list_repos()]
+
+
+@router.get("/healthz")
+def healthz() -> dict:
+    settings = get_settings()
+    return {
+        "status": "ok",
+        "public_base_url": settings.effective_public_base_url,
+        "listen_host": settings.host,
+        "port": settings.port,
+    }
 
 
 @router.get("/api/repos/{repo_id}/commits")

@@ -68,6 +68,37 @@ def create_artifact_bundle(
     return manifest
 
 
+def create_prebuilt_elf_bundle(
+    *,
+    output_path: Path,
+    session_id: str,
+    artifact_id: str | None,
+    role_hint: Role,
+    elf_path: Path,
+    git_sha: str | None,
+    source_repo: str | None,
+    producing_agent_id: str | None = None,
+    rtt_symbol: str | None = "_SEGGER_RTT",
+    build_metadata: dict | None = None,
+) -> ArtifactBundleManifest:
+    relative_elf_path = f"firmware/{elf_path.name}"
+    return create_artifact_bundle(
+        output_path=output_path,
+        session_id=session_id,
+        artifact_id=artifact_id,
+        origin_type=ArtifactOriginType.MANUAL_UPLOAD,
+        producing_agent_id=producing_agent_id,
+        role_hint=role_hint,
+        source_repo=source_repo,
+        git_sha=git_sha,
+        files=[(elf_path, relative_elf_path)],
+        flash_image_path=relative_elf_path,
+        elf_path=relative_elf_path,
+        rtt_symbol=rtt_symbol,
+        build_metadata=build_metadata or {},
+    )
+
+
 def extract_bundle(bundle_path: Path, destination: Path) -> Path:
     destination.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(bundle_path, "r") as archive:
@@ -79,4 +110,3 @@ def load_manifest(extracted_dir: Path) -> ArtifactBundleManifest:
     return ArtifactBundleManifest.model_validate_json(
         (extracted_dir / "manifest.json").read_text(encoding="utf-8")
     )
-

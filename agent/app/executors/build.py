@@ -4,8 +4,11 @@ import glob
 import logging
 import os
 import shlex
+import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from agent.app.core.config import AgentSettings
 from agent.app.services.api_client import ServerClient
@@ -49,9 +52,24 @@ class BuildExecutor:
         origin_type: ArtifactOriginType,
     ) -> JobResult:
         repo_root = self.settings.repo_workspace_root / payload.repo.id
+        repo_context: dict | None = None
         try:
-            self._checkout(repo_root, payload.repo.clone_url, payload.git_sha)
+            self._checkout(
+                repo_root,
+                payload.repo.clone_url,
+                payload.git_sha,
+                default_branch=payload.repo.default_branch,
+            )
+            repo_context = self._repo_context(repo_root)
             build_dir = repo_root / payload.repo.build_recipe.checkout_subdir
+            if not build_dir.exists():
+                raise BuildFailure(
+                    "checkout_subdir_missing",
+                    {
+                        "checkout_subdir": payload.repo.build_recipe.checkout_subdir,
+                        "repo_root": str(repo_root),
+                    },
+                )
             output_dir = self.settings.build_root / payload.session_id / payload.artifact_id
             output_dir.mkdir(parents=True, exist_ok=True)
             build_log_path = output_dir / "build.log"
@@ -99,23 +117,161 @@ class BuildExecutor:
                     "bundle_path": str(bundle_path),
                     "manifest": manifest.model_dump(mode="json"),
                     "build_log_path": str(build_log_path),
+                    "repo_context": repo_context or self._repo_context(repo_root),
                 },
             )
         except BuildFailure as exc:
-            return JobResult(success=False, failure_reason=exc.reason, diagnostics=exc.diagnostics)
+            diagnostics = dict(exc.diagnostics)
+            diagnostics.setdefault("repo_context", repo_context or self._repo_context(repo_root))
+            return JobResult(success=False, failure_reason=exc.reason, diagnostics=diagnostics)
         except Exception as exc:  # pragma: no cover - defensive wrapper
             return JobResult(
                 success=False,
                 failure_reason="upload_failed",
-                diagnostics={"error": str(exc), "artifact_id": payload.artifact_id},
+                diagnostics={
+                    "error": str(exc),
+                    "artifact_id": payload.artifact_id,
+                    "repo_context": repo_context or self._repo_context(repo_root),
+                },
             )
 
-    def _checkout(self, repo_root: Path, clone_url: str, git_sha: str) -> None:
+    def _checkout(
+        self,
+        repo_root: Path,
+        clone_url: str,
+        git_sha: str,
+        *,
+        default_branch: str | None = None,
+    ) -> None:
         repo_root.parent.mkdir(parents=True, exist_ok=True)
+        archived_repo_root = self._prepare_repo_root(repo_root)
+        if archived_repo_root is not None:
+            logger.warning(
+                "moved stale repo workspace %s to %s before recloning",
+                repo_root,
+                archived_repo_root,
+            )
+        authed_clone_url = self._clone_url_with_auth(clone_url)
         if not (repo_root / ".git").exists():
-            self._run_command(f"{self.settings.git_bin} clone {shlex.quote(clone_url)} {shlex.quote(str(repo_root))}")
-        self._run_command(f"{self.settings.git_bin} fetch --all --tags", cwd=repo_root)
-        self._run_command(f"{self.settings.git_bin} checkout {shlex.quote(git_sha)}", cwd=repo_root)
+            branch_arg = f" --branch {shlex.quote(default_branch)}" if default_branch else ""
+            self._run_command(
+                (
+                    f"{self.settings.git_bin} clone{branch_arg} "
+                    f"{shlex.quote(authed_clone_url)} {shlex.quote(str(repo_root))}"
+                ),
+                display_command=(
+                    f"{self.settings.git_bin} clone{branch_arg} "
+                    f"{shlex.quote(self._redact_clone_url(authed_clone_url))} "
+                    f"{shlex.quote(str(repo_root))}"
+                ),
+            )
+        if authed_clone_url != clone_url:
+            self._set_origin_url(
+                repo_root,
+                authed_clone_url,
+                display_url=self._redact_clone_url(authed_clone_url),
+            )
+        try:
+            self._run_command(f"{self.settings.git_bin} fetch --all --tags", cwd=repo_root)
+            if default_branch:
+                self._run_command(
+                    f"{self.settings.git_bin} fetch origin {shlex.quote(default_branch)} --tags",
+                    cwd=repo_root,
+                )
+                self._run_command(
+                    f"{self.settings.git_bin} checkout {shlex.quote(default_branch)}",
+                    cwd=repo_root,
+                )
+                self._run_command(
+                    f"{self.settings.git_bin} reset --hard origin/{shlex.quote(default_branch)}",
+                    cwd=repo_root,
+                )
+            self._run_command(f"{self.settings.git_bin} clean -fdx", cwd=repo_root)
+            self._run_command(f"{self.settings.git_bin} checkout {shlex.quote(git_sha)}", cwd=repo_root)
+        finally:
+            if authed_clone_url != clone_url and (repo_root / ".git").exists():
+                self._set_origin_url(repo_root, clone_url)
+
+    def _prepare_repo_root(self, repo_root: Path) -> Path | None:
+        if not repo_root.exists():
+            return None
+        if (repo_root / ".git").exists():
+            return None
+        if repo_root.is_dir() and not any(repo_root.iterdir()):
+            return None
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        archived_repo_root = repo_root.with_name(f"{repo_root.name}.stale-{timestamp}")
+        suffix = 1
+        while archived_repo_root.exists():
+            archived_repo_root = repo_root.with_name(
+                f"{repo_root.name}.stale-{timestamp}-{suffix}"
+            )
+            suffix += 1
+        shutil.move(str(repo_root), str(archived_repo_root))
+        return archived_repo_root
+
+    def _clone_url_with_auth(self, clone_url: str) -> str:
+        if not self.settings.github_token:
+            return clone_url
+        parsed = urlsplit(clone_url)
+        if parsed.scheme not in {"http", "https"}:
+            return clone_url
+        if parsed.username or parsed.password:
+            return clone_url
+        host = parsed.hostname or ""
+        netloc = f"x-access-token:{quote(self.settings.github_token, safe='')}@{host}"
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+
+    def _set_origin_url(self, repo_root: Path, clone_url: str, *, display_url: str | None = None) -> None:
+        shown_url = display_url or clone_url
+        self._run_command(
+            f"{self.settings.git_bin} remote set-url origin {shlex.quote(clone_url)}",
+            cwd=repo_root,
+            display_command=f"{self.settings.git_bin} remote set-url origin {shlex.quote(shown_url)}",
+        )
+
+    def _redact_clone_url(self, clone_url: str) -> str:
+        parsed = urlsplit(clone_url)
+        if not parsed.password and not parsed.username:
+            return clone_url
+        host = parsed.hostname or ""
+        netloc = f"{parsed.username or 'user'}:***@{host}"
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+
+    def _repo_context(self, repo_root: Path) -> dict:
+        context = {
+            "repo_root": str(repo_root),
+            "exists": repo_root.exists(),
+            "top_level_entries": [],
+            "head_sha": None,
+            "expected_debug_makefile": str(repo_root / "Debug" / "makefile"),
+            "has_debug_makefile": (repo_root / "Debug" / "makefile").exists(),
+        }
+        if not repo_root.exists():
+            return context
+        try:
+            context["top_level_entries"] = sorted(item.name for item in repo_root.iterdir())[:50]
+        except Exception:
+            pass
+        if (repo_root / ".git").exists():
+            try:
+                completed = subprocess.run(
+                    [self.settings.git_bin, "rev-parse", "HEAD"],
+                    cwd=str(repo_root),
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    check=False,
+                )
+                if completed.returncode == 0:
+                    context["head_sha"] = completed.stdout.strip()
+            except Exception:
+                pass
+        return context
 
     def _run_command(
         self,
@@ -125,13 +281,15 @@ class BuildExecutor:
         env: dict[str, str] | None = None,
         timeout_seconds: int = 900,
         log_path: Path | None = None,
+        display_command: str | None = None,
     ) -> None:
         merged_env = os.environ.copy()
         if self.settings.github_token:
             merged_env["GITHUB_TOKEN"] = self.settings.github_token
         if env:
             merged_env.update(env)
-        logger.info("running build command: %s", command)
+        shown_command = display_command or command
+        logger.info("running build command: %s", shown_command)
         completed = subprocess.run(
             command,
             shell=True,
@@ -143,14 +301,14 @@ class BuildExecutor:
         )
         if log_path is not None:
             log_path.write_text(
-                f"$ {command}\n\nstdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}\n",
+                f"$ {shown_command}\n\nstdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}\n",
                 encoding="utf-8",
             )
         if completed.returncode != 0:
             raise BuildFailure(
                 "build_failed",
                 {
-                    "command": command,
+                    "command": shown_command,
                     "cwd": str(cwd) if cwd else None,
                     "return_code": completed.returncode,
                     "stdout": completed.stdout[-4000:],

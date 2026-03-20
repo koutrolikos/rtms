@@ -374,6 +374,15 @@ def session_events(db: Session, session_id: str) -> list[SessionEvent]:
     )
 
 
+def session_jobs(db: Session, session_id: str) -> list[Job]:
+    return (
+        db.query(Job)
+        .filter(Job.session_id == session_id)
+        .order_by(Job.created_at.desc())
+        .all()
+    )
+
+
 def _assert_session_startable(db: Session, session: SessionModel) -> None:
     active = get_active_session(db)
     if active is not None and active.id != session.id:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
 from server.app.core.config import ServerSettings
@@ -7,6 +9,12 @@ from server.app.models.entities import AgentHost
 from shared.enums import AgentStatus
 from shared.schemas import AgentHeartbeatRequest, AgentRegistrationRequest
 from shared.time_sync import utc_now
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def register_agent(db: Session, request: AgentRegistrationRequest) -> AgentHost:
@@ -59,8 +67,7 @@ def heartbeat_agent(db: Session, request: AgentHeartbeatRequest) -> AgentHost:
 
 
 def visible_agent_status(agent: AgentHost, settings: ServerSettings) -> str:
-    age = (utc_now() - agent.last_seen_at).total_seconds()
+    age = (utc_now() - _as_utc(agent.last_seen_at)).total_seconds()
     if age > settings.agent_offline_seconds:
         return AgentStatus.OFFLINE.value
     return agent.status
-

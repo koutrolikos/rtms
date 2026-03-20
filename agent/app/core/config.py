@@ -13,7 +13,7 @@ from shared.schemas import AgentCapabilities
 class OpenOcdSettings(BaseModel):
     openocd_bin: str = "openocd"
     interface_cfg: str = "interface/stlink.cfg"
-    target_cfg: str = "target/stm32f4x.cfg"
+    target_cfg: str = "target/stm32g4x.cfg"
     extra_args: list[str] = Field(default_factory=list)
     flash_timeout_seconds: int = 180
     verify_markers: list[str] = Field(
@@ -91,7 +91,7 @@ def get_settings() -> AgentSettings:
         openocd=OpenOcdSettings(
             openocd_bin=os.getenv("RANGE_TEST_OPENOCD_BIN", "openocd"),
             interface_cfg=os.getenv("RANGE_TEST_OPENOCD_INTERFACE_CFG", "interface/stlink.cfg"),
-            target_cfg=os.getenv("RANGE_TEST_OPENOCD_TARGET_CFG", "target/stm32f4x.cfg"),
+            target_cfg=os.getenv("RANGE_TEST_OPENOCD_TARGET_CFG", "target/stm32g4x.cfg"),
             probe_serial=os.getenv("RANGE_TEST_PROBE_SERIAL"),
             simulate_hardware=os.getenv("RANGE_TEST_SIMULATE_HARDWARE", "0") == "1",
         ),
@@ -100,4 +100,3 @@ def get_settings() -> AgentSettings:
             simulate_capture=os.getenv("RANGE_TEST_SIMULATE_CAPTURE", "0") == "1",
         ),
     )
-

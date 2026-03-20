@@ -2,9 +2,9 @@
 
 ## Normal Workflow
 
-1. Start the server on the VPS.
-2. Start one agent on the TX host and one agent on the RX host.
-3. Open the web UI and create a session.
+1. Start the server on the control machine or VPS.
+2. Open the web UI using the server's LAN/VPS address, not `localhost`.
+3. Start one agent on the TX host and one agent on the RX host with `RANGE_TEST_SERVER_URL` pointed at that server address.
 4. Assign TX and RX hosts.
 5. Build artifacts from an exact GitHub SHA or upload/build a local session artifact from an agent.
 6. Assign a ready TX artifact and a ready RX artifact.
@@ -32,7 +32,25 @@ If flashing or capture fails, inspect:
 
 ## Notes
 
+- The Hosts page shows the agent/public URL the server is advertising for remote agents.
 - Session start notes remain editable after the session ends.
 - Manual stop is available while the session is capturing.
 - Raw artifacts are always preserved, even if parsing or report generation is imperfect.
 
+## Prebuilt ELF Upload
+
+If a repo cannot be built from a clean GitHub clone, upload a prebuilt ELF as a
+manual session artifact:
+
+```bash
+range-test-agent upload-prebuilt \
+  --session-id <session-id> \
+  --role TX \
+  --elf-path /path/to/tx.elf \
+  --git-sha <base-head-sha> \
+  --source-repo owner/repo \
+  --dirty-worktree
+```
+
+Repeat for `RX`, then assign both ready artifacts from the session page before
+starting the session.

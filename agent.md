@@ -43,6 +43,7 @@
 - Extract the bundle.
 - Resolve the flash image and ELF metadata from the manifest.
 - Run OpenOCD `program + verify`.
+- By default, STM32G4 targets use `target/stm32g4x.cfg`; override with `RANGE_TEST_OPENOCD_TARGET_CFG` if your board family differs.
 - Preserve OpenOCD and local event logs.
 - Upload side-effect logs to the server.
 
@@ -61,4 +62,3 @@
 - Find the running capture for the session role.
 - Send termination to the capture process.
 - Report whether the stop request was applied.
-

@@ -1,20 +1,38 @@
 [
   {
-    "id": "rf-fw",
-    "display_name": "RF Firmware",
-    "full_name": "your-org/private-rf-fw",
-    "clone_url": "git@github.com:your-org/private-rf-fw.git",
+    "id": "high-altitude-cc-tx-debug",
+    "display_name": "High-Altitude-CC TX Debug RTT",
+    "full_name": "koutrolikos/High-Altitude-CC",
+    "clone_url": "https://github.com/koutrolikos/High-Altitude-CC.git",
     "api_url": "https://api.github.com",
-    "default_branch": "main",
+    "default_branch": "dev",
     "build_recipe": {
-      "build_command": "make release",
+      "build_command": "make -f Debug/makefile DEBUG=1 CDEFS_EXTRA='-DAPP_ROLE_MODE=APP_ROLE_MODE_TX -DAPP_DEBUG_ENABLE=1'",
       "artifact_globs": [
-        "build/**/*.elf",
-        "build/**/*.bin",
-        "build/**/*.hex"
+        "build/debug/High-Altitude-CC.elf"
       ],
-      "elf_glob": "build/**/*.elf",
-      "flash_image_glob": "build/**/*.elf",
+      "elf_glob": "build/debug/High-Altitude-CC.elf",
+      "flash_image_glob": "build/debug/High-Altitude-CC.elf",
+      "checkout_subdir": ".",
+      "timeout_seconds": 1200,
+      "env": {},
+      "rtt_symbol": "_SEGGER_RTT"
+    }
+  },
+  {
+    "id": "high-altitude-cc-rx-debug",
+    "display_name": "High-Altitude-CC RX Debug RTT",
+    "full_name": "koutrolikos/High-Altitude-CC",
+    "clone_url": "https://github.com/koutrolikos/High-Altitude-CC.git",
+    "api_url": "https://api.github.com",
+    "default_branch": "dev",
+    "build_recipe": {
+      "build_command": "make -f Debug/makefile DEBUG=1 CDEFS_EXTRA='-DAPP_ROLE_MODE=APP_ROLE_MODE_RX -DAPP_DEBUG_ENABLE=1'",
+      "artifact_globs": [
+        "build/debug/High-Altitude-CC.elf"
+      ],
+      "elf_glob": "build/debug/High-Altitude-CC.elf",
+      "flash_image_glob": "build/debug/High-Altitude-CC.elf",
       "checkout_subdir": ".",
       "timeout_seconds": 1200,
       "env": {},
@@ -22,4 +40,3 @@
     }
   }
 ]
-

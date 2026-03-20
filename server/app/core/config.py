@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 from functools import lru_cache
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from shared.schemas import ConfiguredRepo
 class ServerSettings(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
+    public_base_url: str | None = None
     database_url: str = "sqlite:///./server_data/server.db"
     data_dir: Path = Path("server_data")
     artifacts_dir_name: str = "artifacts"
@@ -42,6 +44,30 @@ class ServerSettings(BaseModel):
         payload = json.loads(self.repo_config_path.read_text(encoding="utf-8"))
         return [ConfiguredRepo.model_validate(item) for item in payload]
 
+    @property
+    def effective_public_base_url(self) -> str:
+        if self.public_base_url:
+            return self.public_base_url.rstrip("/")
+        return f"http://{detect_lan_ip()}:{self.port}"
+
+
+def detect_lan_ip() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            address = sock.getsockname()[0]
+            if address and not address.startswith("127."):
+                return address
+    except OSError:
+        pass
+    try:
+        address = socket.gethostbyname(socket.gethostname())
+        if address and not address.startswith("127."):
+            return address
+    except OSError:
+        pass
+    return "127.0.0.1"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> ServerSettings:
@@ -49,6 +75,7 @@ def get_settings() -> ServerSettings:
     return ServerSettings(
         host=os.getenv("RANGE_TEST_SERVER_HOST", "0.0.0.0"),
         port=int(os.getenv("RANGE_TEST_SERVER_PORT", "8000")),
+        public_base_url=os.getenv("RANGE_TEST_SERVER_PUBLIC_BASE_URL"),
         database_url=os.getenv(
             "RANGE_TEST_SERVER_DB_URL", f"sqlite:///{data_dir / 'server.db'}"
         ),
@@ -65,4 +92,3 @@ def get_settings() -> ServerSettings:
             os.getenv("RANGE_TEST_REPO_CONFIG", str(data_dir / "repos.json"))
         ),
     )
-

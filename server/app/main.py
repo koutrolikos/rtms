@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import uvicorn
@@ -11,6 +12,8 @@ from server.app.api.operator import router as operator_router
 from server.app.core.config import get_settings
 from server.app.core.logging import configure_logging
 from server.app.db.session import init_db
+
+logger = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
@@ -37,5 +40,10 @@ app = create_app()
 
 def run() -> None:
     settings = get_settings()
+    logger.info(
+        "Starting server on listen address http://%s:%s with public URL %s",
+        settings.host,
+        settings.port,
+        settings.effective_public_base_url,
+    )
     uvicorn.run("server.app.main:app", host=settings.host, port=settings.port, reload=False)
-

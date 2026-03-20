@@ -52,3 +52,11 @@ shared/manifest.py
 shared/schemas.py
 shared/state_machine.py
 shared/time_sync.py
+tests/test_api.py
+tests/test_build_executor.py
+tests/test_bundle.py
+tests/test_parser.py
+tests/test_prebuilt_upload.py
+tests/test_session_service.py
+tests/test_state_machine.py
+tests/test_time_sync.py
