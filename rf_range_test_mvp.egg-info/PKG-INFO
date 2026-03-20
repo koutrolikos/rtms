@@ -1,0 +1,53 @@
+Metadata-Version: 2.4
+Name: rf-range-test-mvp
+Version: 0.1.0
+Summary: Distributed RF range-test orchestration MVP with central server and remote agents.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: uvicorn>=0.30.0
+Requires-Dist: jinja2>=3.1.4
+Requires-Dist: sqlalchemy>=2.0.31
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: pydantic>=2.8.2
+Requires-Dist: python-multipart>=0.0.9
+Provides-Extra: dev
+Requires-Dist: pytest>=8.2.2; extra == "dev"
+
+# RF Range-Test MVP
+
+Distributed RF range-test orchestration MVP with:
+
+- a FastAPI control plane
+- polling Python host agents
+- session-scoped artifact storage
+- OpenOCD-compatible flash/verify orchestration
+- capture coordination across TX/RX hosts
+- raw-log preservation, parsing, merge, and HTML report generation
+
+## Quick start
+
+1. Create a virtual environment and install the package:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+```
+
+2. Start the server:
+
+```bash
+range-test-server
+```
+
+3. Start an agent:
+
+```bash
+range-test-agent run
+```
+
+4. Open `http://127.0.0.1:8000`.
+
+See [architecture.md](/Users/odysseaskoutrolikos/rtms/architecture.md), [agent.md](/Users/odysseaskoutrolikos/rtms/agent.md), [mvp_scope.md](/Users/odysseaskoutrolikos/rtms/mvp_scope.md), [docs/developer_setup.md](/Users/odysseaskoutrolikos/rtms/docs/developer_setup.md), and [docs/operator_guide.md](/Users/odysseaskoutrolikos/rtms/docs/operator_guide.md).
+

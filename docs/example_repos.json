@@ -1,0 +1,25 @@
+[
+  {
+    "id": "rf-fw",
+    "display_name": "RF Firmware",
+    "full_name": "your-org/private-rf-fw",
+    "clone_url": "git@github.com:your-org/private-rf-fw.git",
+    "api_url": "https://api.github.com",
+    "default_branch": "main",
+    "build_recipe": {
+      "build_command": "make release",
+      "artifact_globs": [
+        "build/**/*.elf",
+        "build/**/*.bin",
+        "build/**/*.hex"
+      ],
+      "elf_glob": "build/**/*.elf",
+      "flash_image_glob": "build/**/*.elf",
+      "checkout_subdir": ".",
+      "timeout_seconds": 1200,
+      "env": {},
+      "rtt_symbol": "_SEGGER_RTT"
+    }
+  }
+]
+

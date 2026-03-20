@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}{{ session.name }}{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">Session</p>
+    <h2>{{ session.name }}</h2>
+    <p class="muted">{{ session.id }}</p>
+  </div>
+  <div class="hero-status">
+    <span class="chip chip-{{ session.status }}">{{ session.status }}</span>
+    {% if report and report.html_storage_path %}
+    <a class="button secondary" href="/sessions/{{ session.id }}/report">View Report</a>
+    {% endif %}
+  </div>
+</section>
+
+<section class="grid two">
+  <article class="panel">
+    <div class="panel-head">
+      <h3>Session Metadata</h3>
+    </div>
+    <form method="post" action="/sessions/{{ session.id }}/metadata" class="stack">
+      <label><span>Name</span><input type="text" name="name" value="{{ session.name }}" /></label>
+      <label><span>Stop Mode</span>
+        <select name="stop_mode">
+          <option value="default_duration" {% if session.stop_mode == "default_duration" %}selected{% endif %}>Default duration</option>
+          <option value="fixed_duration" {% if session.stop_mode == "fixed_duration" %}selected{% endif %}>Fixed duration</option>
+          <option value="manual" {% if session.stop_mode == "manual" %}selected{% endif %}>Manual stop</option>
+        </select>
+      </label>
+      <label><span>Selected Duration Minutes</span><input type="number" min="1" name="selected_duration_minutes" value="{{ session.selected_duration_minutes or session.default_duration_minutes }}" /></label>
+      <label><span>Location</span><input type="text" name="location_text" value="{{ session.location_text or '' }}" /></label>
+      <label><span>Initial Notes</span><textarea name="initial_notes" rows="4">{{ session.initial_notes or "" }}</textarea></label>
+      <label><span>Final Notes</span><textarea name="final_notes" rows="4">{{ session.final_notes or "" }}</textarea></label>
+      <button type="submit">Save Notes</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <h3>Role Assignment</h3>
+    </div>
+    <form method="post" action="/sessions/{{ session.id }}/hosts" class="stack">
+      <label>
+        <span>TX Host</span>
+        <select name="tx_agent_id" required>
+          <option value="">Select TX host</option>
+          {% for host in hosts %}
+          <option value="{{ host.id }}" {% if session.tx_agent_id == host.id %}selected{% endif %}>{{ host.label or host.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>RX Host</span>
+        <select name="rx_agent_id" required>
+          <option value="">Select RX host</option>
+          {% for host in hosts %}
+          <option value="{{ host.id }}" {% if session.rx_agent_id == host.id %}selected{% endif %}>{{ host.label or host.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Assign Hosts</button>
+    </form>
+  </article>
+</section>
+
+<section class="grid two">
+  <article class="panel">
+    <div class="panel-head">
+      <h3>Trigger GitHub Build</h3>
+      <p class="muted">Request a build by exact git SHA on a build-capable agent.</p>
+    </div>
+    <form method="post" action="/sessions/{{ session.id }}/builds" class="stack">
+      <label>
+        <span>Repo</span>
+        <select name="repo_id" required>
+          <option value="">Select repo</option>
+          {% for repo in repos %}
+          <option value="{{ repo.id }}">{{ repo.display_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label><span>Exact Git SHA</span><input type="text" name="git_sha" required placeholder="40-char SHA or branch-qualified SHA" /></label>
+      <label>
+        <span>Build Host</span>
+        <select name="build_agent_id" required>
+          <option value="">Select agent</option>
+          {% for host in hosts %}
+          {% if host.capabilities_json.build_capable %}
+          <option value="{{ host.id }}">{{ host.label or host.name }}</option>
+          {% endif %}
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Auto-Assign Role</span>
+        <select name="role">
+          <option value="">No auto-assign</option>
+          <option value="TX">TX</option>
+          <option value="RX">RX</option>
+        </select>
+      </label>
+      <button type="submit">Queue Build</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <h3>Assign Ready Artifacts</h3>
+      <p class="muted">Session-scoped bundles from build jobs or local agent uploads.</p>
+    </div>
+    <div class="stack">
+      <form method="post" action="/sessions/{{ session.id }}/artifacts/assign" class="inline-form">
+        <input type="hidden" name="role" value="TX" />
+        <select name="artifact_id" required>
+          <option value="">TX artifact</option>
+          {% for artifact in artifacts %}
+          {% if artifact.status == "ready" %}
+          <option value="{{ artifact.id }}" {% if session.tx_artifact_id == artifact.id %}selected{% endif %}>
+            {{ artifact.id[:8] }} | {{ artifact.origin_type }} | {{ artifact.git_sha or "uploaded" }}
+          </option>
+          {% endif %}
+          {% endfor %}
+        </select>
+        <button type="submit">Assign TX</button>
+      </form>
+      <form method="post" action="/sessions/{{ session.id }}/artifacts/assign" class="inline-form">
+        <input type="hidden" name="role" value="RX" />
+        <select name="artifact_id" required>
+          <option value="">RX artifact</option>
+          {% for artifact in artifacts %}
+          {% if artifact.status == "ready" %}
+          <option value="{{ artifact.id }}" {% if session.rx_artifact_id == artifact.id %}selected{% endif %}>
+            {{ artifact.id[:8] }} | {{ artifact.origin_type }} | {{ artifact.git_sha or "uploaded" }}
+          </option>
+          {% endif %}
+          {% endfor %}
+        </select>
+        <button type="submit">Assign RX</button>
+      </form>
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>Control</h3>
+    <p class="muted">Capture starts only after both roles report preparation success.</p>
+  </div>
+  <div class="button-row">
+    <form method="post" action="/sessions/{{ session.id }}/start">
+      <button type="submit" {% if not session.tx_agent_id or not session.rx_agent_id or not session.tx_artifact_id or not session.rx_artifact_id %}disabled{% endif %}>Start Session</button>
+    </form>
+    <form method="post" action="/sessions/{{ session.id }}/stop">
+      <button type="submit" class="danger" {% if session.status != "capturing" %}disabled{% endif %}>Manual Stop</button>
+    </form>
+    <form method="post" action="/sessions/{{ session.id }}/report/generate">
+      <button type="submit" class="secondary">Generate Report</button>
+    </form>
+  </div>
+</section>
+
+<section class="grid two">
+  <article class="panel">
+    <div class="panel-head">
+      <h3>Role Runs</h3>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Role</th>
+          <th>Host</th>
+          <th>Status</th>
+          <th>Flash</th>
+          <th>Verify</th>
+          <th>Failure</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for role in roles %}
+        <tr>
+          <td>{{ role.role }}</td>
+          <td>{{ role.agent_id }}</td>
+          <td>{{ role.status }}</td>
+          <td>{{ role.flash_result or "-" }}</td>
+          <td>{{ role.verify_result or "-" }}</td>
+          <td>{{ role.failure_reason or "-" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">No role runs yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <h3>Live Annotation</h3>
+      <p class="muted">Annotations are timestamped on submission and included in the merged report.</p>
+    </div>
+    <form method="post" action="/sessions/{{ session.id }}/annotations" class="stack">
+      <label><span>Annotation</span><textarea name="text" rows="3" placeholder="Vehicle passed tree line, LOS obstruction, antenna orientation change."></textarea></label>
+      <button type="submit">Add Annotation</button>
+    </form>
+    <ul class="timeline">
+      {% for annotation in annotations %}
+      <li><strong>{{ annotation.created_at }}</strong><span>{{ annotation.text }}</span></li>
+      {% else %}
+      <li class="muted">No annotations yet.</li>
+      {% endfor %}
+    </ul>
+  </article>
+</section>
+
+<section class="grid two">
+  <article class="panel">
+    <div class="panel-head">
+      <h3>Artifacts</h3>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Status</th>
+          <th>Origin</th>
+          <th>SHA</th>
+          <th>Download</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for artifact in artifacts %}
+        <tr>
+          <td>{{ artifact.id[:8] }}</td>
+          <td>{{ artifact.status }}</td>
+          <td>{{ artifact.origin_type }}</td>
+          <td>{{ artifact.git_sha or "-" }}</td>
+          <td>{% if artifact.storage_path %}<a href="/api/artifacts/{{ artifact.id }}/download">bundle</a>{% else %}-{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="muted">No artifacts yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <h3>Raw Artifacts</h3>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Role</th>
+          <th>Size</th>
+          <th>Download</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in raw_artifacts %}
+        <tr>
+          <td>{{ item.type }}</td>
+          <td>{{ item.role or "session" }}</td>
+          <td>{{ item.size_bytes }}</td>
+          <td><a href="/api/raw-artifacts/{{ item.id }}/download">download</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">No raw artifacts uploaded yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>Session Event Log</h3>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Source</th>
+        <th>Type</th>
+        <th>Payload</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for event in events %}
+      <tr>
+        <td>{{ event.corrected_timestamp or event.created_at }}</td>
+        <td>{{ event.source_type }}</td>
+        <td>{{ event.event_type }}</td>
+        <td><code>{{ event.payload_json }}</code></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">No session events yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+

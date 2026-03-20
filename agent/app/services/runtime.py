@@ -1,0 +1,255 @@
+from __future__ import annotations
+
+import argparse
+import logging
+import time
+from pathlib import Path
+
+from agent.app.core.config import AgentSettings
+from agent.app.executors.build import BuildExecutor
+from agent.app.executors.capture import RunningCapture
+from agent.app.executors.openocd import OpenOcdExecutor
+from agent.app.services.api_client import ServerClient
+from agent.app.storage.local_state import LocalStateStore
+from shared.enums import AgentStatus, ArtifactOriginType, JobType, RawArtifactType, Role
+from shared.schemas import (
+    AgentHeartbeatRequest,
+    AgentRegistrationRequest,
+    BuildArtifactPayload,
+    JobEnvelope,
+    JobResult,
+    PrepareRolePayload,
+    StartCapturePayload,
+    StopCapturePayload,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class AgentRuntime:
+    def __init__(self, settings: AgentSettings) -> None:
+        self.settings = settings
+        self.settings.prepare_dirs()
+        self.client = ServerClient(settings.server_url)
+        self.state_store = LocalStateStore(self.settings.data_dir / "state")
+        self.build_executor = BuildExecutor(settings)
+        self.openocd_executor = OpenOcdExecutor(settings, self.state_store)
+        self.agent_id: str | None = None
+        self.running_captures: dict[str, RunningCapture] = {}
+        self.last_heartbeat_at = 0.0
+        self.latest_time_sample = None
+
+    def register(self) -> None:
+        response = self.client.register_agent(
+            AgentRegistrationRequest(
+                name=self.settings.name,
+                label=self.settings.label,
+                hostname=self.settings.hostname,
+                capabilities=self.settings.capabilities,
+                ip_address=self.settings.ip_address,
+                connected_probe_count=1 if self.settings.capabilities.flash_capable else 0,
+                software_version=self.settings.software_version,
+            )
+        )
+        self.agent_id = response.agent_id
+        self.sample_time_sync()
+
+    def sample_time_sync(self) -> None:
+        self.latest_time_sample = self.client.sample_time_sync()
+
+    def heartbeat_if_needed(self) -> None:
+        if self.agent_id is None:
+            raise RuntimeError("agent not registered")
+        now = time.monotonic()
+        if now - self.last_heartbeat_at < self.settings.heartbeat_interval_seconds:
+            return
+        self.sample_time_sync()
+        self.client.heartbeat(
+            AgentHeartbeatRequest(
+                agent_id=self.agent_id,
+                status=self.current_status(),
+                ip_address=self.settings.ip_address,
+                connected_probe_count=1 if self.settings.capabilities.flash_capable else 0,
+                latest_time_sample=self.latest_time_sample,
+                diagnostics={"running_capture_jobs": list(self.running_captures.keys())},
+            )
+        )
+        self.last_heartbeat_at = now
+
+    def current_status(self) -> AgentStatus:
+        if self.running_captures:
+            return AgentStatus.BUSY
+        return AgentStatus.IDLE
+
+    def poll_once(self) -> None:
+        if self.agent_id is None:
+            raise RuntimeError("agent not registered")
+        self.heartbeat_if_needed()
+        self._collect_finished_captures()
+        response = self.client.poll(self.agent_id, self.current_status())
+        if response.job is None:
+            return
+        self.execute_job(response.job)
+
+    def execute_job(self, job: JobEnvelope) -> None:
+        logger.info("executing job %s type=%s", job.id, job.type)
+        try:
+            if job.type == JobType.BUILD_ARTIFACT:
+                payload = BuildArtifactPayload.model_validate(job.payload)
+                result = self.build_executor.run_build(payload, client=self.client, agent_id=self.agent_id)
+                self.client.report_job_result(job.id, result)
+                return
+            if job.type == JobType.PREPARE_ROLE:
+                payload = PrepareRolePayload.model_validate(job.payload)
+                bundle_path = self.settings.downloads_root / payload.session_id / f"{payload.role.value.lower()}_{payload.artifact_id}.zip"
+                self.client.download_artifact(payload.artifact_download_url, bundle_path)
+                self.sample_time_sync()
+                result = self.openocd_executor.prepare(
+                    payload, bundle_path=bundle_path, time_samples=[self.latest_time_sample]
+                )
+                if result.success:
+                    try:
+                        self._upload_prepare_side_effects(payload)
+                    except Exception as exc:
+                        result = JobResult(
+                            success=False,
+                            failure_reason="upload_failed",
+                            diagnostics={**result.diagnostics, "error": str(exc)},
+                            time_samples=result.time_samples,
+                        )
+                self.client.report_job_result(job.id, result)
+                return
+            if job.type == JobType.START_CAPTURE:
+                payload = StartCapturePayload.model_validate(job.payload)
+                context = self.state_store.load_context(payload.session_id, payload.role.value)
+                if context is None:
+                    self.client.report_job_result(
+                        job.id,
+                        JobResult(success=False, failure_reason="capture_failed", diagnostics={"error": "missing prepared context"}),
+                    )
+                    return
+                self.sample_time_sync()
+                context.latest_time_samples.append(self.latest_time_sample)
+                self.state_store.write_timing_samples(context)
+                capture = RunningCapture(
+                    job_id=job.id,
+                    context=context,
+                    payload=payload,
+                    settings=self.settings,
+                    state_store=self.state_store,
+                )
+                self.running_captures[job.id] = capture
+                capture.start()
+                return
+            if job.type == JobType.STOP_CAPTURE:
+                payload = StopCapturePayload.model_validate(job.payload)
+                stopped = False
+                for capture in self.running_captures.values():
+                    if (
+                        capture.payload.session_id == payload.session_id
+                        and capture.payload.role == payload.role
+                    ):
+                        capture.stop(reason=payload.reason)
+                        stopped = True
+                self.client.report_job_result(
+                    job.id,
+                    JobResult(success=stopped, failure_reason=None if stopped else "capture_not_running"),
+                )
+                return
+            self.client.report_job_result(job.id, JobResult(success=False, failure_reason="unknown_job_type"))
+        except Exception as exc:  # pragma: no cover - defensive wrapper
+            logger.exception("job %s failed unexpectedly", job.id)
+            self.client.report_job_result(
+                job.id,
+                JobResult(success=False, failure_reason="agent_exception", diagnostics={"error": str(exc)}),
+            )
+
+    def _upload_prepare_side_effects(self, payload: PrepareRolePayload) -> None:
+        context = self.state_store.load_context(payload.session_id, payload.role.value)
+        if context is None:
+            return
+        for path, artifact_type in (
+            (context.openocd_log_path, RawArtifactType.OPENOCD_LOG),
+            (context.event_log_path, RawArtifactType.AGENT_EVENT_LOG),
+            (context.timing_samples_path, RawArtifactType.TIMING_SAMPLES),
+        ):
+            if path and Path(path).exists():
+                    self.client.upload_raw_artifact(
+                        path=Path(path),
+                        session_id=payload.session_id,
+                        artifact_type=artifact_type,
+                        role=payload.role,
+                        metadata={"stage": "prepare"},
+                    )
+
+    def _collect_finished_captures(self) -> None:
+        finished: list[str] = []
+        for job_id, capture in self.running_captures.items():
+            if not capture.done():
+                continue
+            result = capture.result()
+            context = capture.context
+            upload_error: Exception | None = None
+            for path, artifact_type in (
+                (capture.rtt_log_path, RawArtifactType.RTT_LOG),
+                (Path(context.event_log_path) if context.event_log_path else None, RawArtifactType.AGENT_EVENT_LOG),
+                (Path(context.timing_samples_path) if context.timing_samples_path else None, RawArtifactType.TIMING_SAMPLES),
+            ):
+                if path and Path(path).exists():
+                    try:
+                        self.client.upload_raw_artifact(
+                            path=Path(path),
+                            session_id=context.session_id,
+                            artifact_type=artifact_type,
+                            role=Role(context.role),
+                            metadata={"stage": "capture"},
+                        )
+                    except Exception as exc:  # pragma: no cover - defensive wrapper
+                        upload_error = exc
+                        break
+            if upload_error is not None:
+                result = JobResult(
+                    success=False,
+                    failure_reason="upload_failed",
+                    diagnostics={"error": str(upload_error), **result.diagnostics},
+                    time_samples=result.time_samples,
+                )
+            self.client.report_job_result(job_id, result)
+            finished.append(job_id)
+        for job_id in finished:
+            self.running_captures.pop(job_id, None)
+
+    def run(self) -> None:
+        self.register()
+        logger.info("agent registered as %s", self.agent_id)
+        while True:
+            self.poll_once()
+            time.sleep(self.settings.poll_interval_seconds)
+
+    def close(self) -> None:
+        self.client.close()
+
+    def build_local_upload(
+        self,
+        *,
+        session_id: str,
+        repo_id: str,
+        git_sha: str,
+        role: Role | None = None,
+    ) -> None:
+        if self.agent_id is None:
+            self.register()
+        repos = {repo.id: repo for repo in self.client.list_repos()}
+        repo = repos[repo_id]
+        payload = BuildArtifactPayload(
+            artifact_id="",
+            session_id=session_id,
+            role_hint=role,
+            repo=repo,
+            git_sha=git_sha,
+        )
+        result = self.build_executor.run_local_build_upload(
+            payload, client=self.client, agent_id=self.agent_id
+        )
+        if not result.success:
+            raise RuntimeError(result.failure_reason)

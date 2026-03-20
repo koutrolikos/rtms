@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Hosts{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>Agents</h2>
+    <p class="muted">Connected build/flash/capture hosts. One active test session at a time.</p>
+  </div>
+  <div class="card-grid">
+    {% for host in hosts %}
+    <article class="card">
+      <div class="card-title-row">
+        <h3>{{ host.label or host.name }}</h3>
+        <span class="chip chip-{{ host_status[host.id] }}">{{ host_status[host.id] }}</span>
+      </div>
+      <dl class="meta">
+        <div><dt>Name</dt><dd>{{ host.name }}</dd></div>
+        <div><dt>Hostname</dt><dd>{{ host.hostname }}</dd></div>
+        <div><dt>IP</dt><dd>{{ host.ip_address or "n/a" }}</dd></div>
+        <div><dt>Probes</dt><dd>{{ host.connected_probe_count }}</dd></div>
+        <div><dt>Capabilities</dt><dd>{{ host.capabilities_json }}</dd></div>
+        <div><dt>Last Seen</dt><dd>{{ host.last_seen_at }}</dd></div>
+      </dl>
+    </article>
+    {% else %}
+    <p class="muted">No agents registered yet.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Recent Sessions</h2>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Status</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for session in sessions %}
+      <tr>
+        <td><a href="/sessions/{{ session.id }}">{{ session.name }}</a></td>
+        <td>{{ session.status }}</td>
+        <td>{{ session.created_at }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="3" class="muted">No sessions created yet.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+

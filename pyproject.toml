@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rf-range-test-mvp"
+version = "0.1.0"
+description = "Distributed RF range-test orchestration MVP with central server and remote agents."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "jinja2>=3.1.4",
+  "sqlalchemy>=2.0.31",
+  "httpx>=0.27.0",
+  "pydantic>=2.8.2",
+  "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.2",
+]
+
+[project.scripts]
+range-test-server = "server.app.main:run"
+range-test-agent = "agent.app.cli.main:main"
+
+[tool.setuptools]
+packages = [
+  "shared",
+  "server",
+  "server.app",
+  "server.app.api",
+  "server.app.core",
+  "server.app.db",
+  "server.app.models",
+  "server.app.repositories",
+  "server.app.services",
+  "agent",
+  "agent.app",
+  "agent.app.cli",
+  "agent.app.core",
+  "agent.app.executors",
+  "agent.app.services",
+  "agent.app.storage",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

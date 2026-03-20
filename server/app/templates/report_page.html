@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Report{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>HTML Report</h2>
+    <a class="button secondary" href="/sessions/{{ session.id }}">Back to Session</a>
+  </div>
+  <div class="report-shell">
+    {{ report_html | safe }}
+  </div>
+</section>
+{% endblock %}
+
