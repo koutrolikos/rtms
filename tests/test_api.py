@@ -164,7 +164,7 @@ def test_start_session_uses_public_base_url_for_agent_downloads(db_session, monk
     def override_get_db():
         yield db_session
 
-    settings = ServerSettings(public_base_url="http://192.168.1.50:8000")
+    settings = ServerSettings(public_base_url="http://172.20.10.3:8000")
     monkeypatch.setattr("server.app.api.operator.get_settings", lambda: settings)
     monkeypatch.setattr("server.app.db.session.get_settings", lambda: settings)
     app.dependency_overrides[get_db] = override_get_db
@@ -214,7 +214,7 @@ def test_start_session_uses_public_base_url_for_agent_downloads(db_session, monk
     jobs = db_session.query(Job).filter(Job.session_id == session_id).all()
     assert len(jobs) == 2
     assert all(
-        job.payload_json["artifact_download_url"].startswith("http://192.168.1.50:8000/api/artifacts/")
+        job.payload_json["artifact_download_url"].startswith("http://172.20.10.3:8000/api/artifacts/")
         for job in jobs
     )
 
@@ -249,7 +249,7 @@ def test_validate_server_url_rejects_listen_address() -> None:
 
 def test_describe_connect_error_explains_https_against_http_server() -> None:
     exc = describe_connect_error(
-        "https://192.168.1.50:8000",
+        "https://172.20.10.3:8000",
         RuntimeError("[SSL: WRONG_VERSION_NUMBER] wrong version number"),
     )
     assert "using https://" in str(exc)

@@ -202,7 +202,7 @@ def test_resolve_build_command_adds_high_altitude_cc_cdefs() -> None:
 
 def test_run_build_uploads_build_log_and_cleans_workspace(tmp_path: Path) -> None:
     settings = AgentSettings(
-        server_url="http://192.168.1.50:8000",
+        server_url="http://172.20.10.3:8000",
         data_dir=tmp_path / "agent_data",
     )
     settings.prepare_dirs()

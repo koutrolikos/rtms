@@ -11,12 +11,12 @@ from shared.time_sync import utc_now
 
 
 def test_default_openocd_target_cfg_matches_stm32g4() -> None:
-    settings = AgentSettings(server_url="http://192.168.1.50:8000")
+    settings = AgentSettings(server_url="http://172.20.10.3:8000")
     assert settings.openocd.target_cfg == "target/stm32g4x.cfg"
 
 
 def test_program_command_normalizes_windows_path() -> None:
-    settings = AgentSettings(server_url="http://192.168.1.50:8000")
+    settings = AgentSettings(server_url="http://172.20.10.3:8000")
     executor = OpenOcdExecutor(settings, LocalStateStore(Path("unused-state")))
     command = executor._program_command(
         Path(r"agent_data\sessions\session-1\rx\bundle\firmware\High-Altitude-CC.elf")
@@ -31,7 +31,7 @@ def test_flash_failure_includes_target_cfg_hint(monkeypatch: pytest.MonkeyPatch,
     image_path = tmp_path / "fw.elf"
     image_path.write_bytes(b"firmware")
     settings = AgentSettings(
-        server_url="http://192.168.1.50:8000",
+        server_url="http://172.20.10.3:8000",
         data_dir=tmp_path / "agent_data",
         openocd=OpenOcdSettings(target_cfg="target/stm32f4x.cfg"),
     )
@@ -88,7 +88,7 @@ def test_missing_openocd_binary_includes_install_hint(monkeypatch: pytest.Monkey
     image_path = tmp_path / "fw.elf"
     image_path.write_bytes(b"firmware")
     settings = AgentSettings(
-        server_url="http://192.168.1.50:8000",
+        server_url="http://172.20.10.3:8000",
         data_dir=tmp_path / "agent_data",
         openocd=OpenOcdSettings(openocd_bin="openocd"),
     )

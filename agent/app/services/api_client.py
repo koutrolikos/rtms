@@ -33,14 +33,14 @@ def validate_server_url(server_url: str) -> None:
     host = parsed.hostname
     if not parsed.scheme or not host:
         raise ServerConnectionError(
-            f"Invalid RANGE_TEST_SERVER_URL: {server_url!r}. Expected format like http://192.168.1.50:8000"
+            f"Invalid RANGE_TEST_SERVER_URL: {server_url!r}. Expected format like http://172.20.10.3:8000"
         )
     if host == "0.0.0.0":
         raise ServerConnectionError(
             "RANGE_TEST_SERVER_URL points at the server listen address "
             f"({server_url}), which is not a routable destination. Use either "
             "http://127.0.0.1:8000 for same-machine development or the server machine's "
-            "LAN/VPS IP for remote agents, for example http://192.168.1.50:8000"
+            "LAN/VPS IP for remote agents, for example http://172.20.10.3:8000"
         )
 
 

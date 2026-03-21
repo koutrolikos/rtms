@@ -1,5 +1,113 @@
 # Developer Setup
 
+## Fastest Path (Fresh Machine)
+
+If your goal is "start a new agent on a random machine with minimal effort", use one of these exact flows.
+
+### Script-first path (recommended)
+
+Linux:
+
+```bash
+./scripts/bootstrap_agent_linux.sh --server-url http://172.20.10.3:8000
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\bootstrap_agent_windows.ps1 -ServerUrl http://172.20.10.3:8000
+```
+
+Modes supported by both scripts:
+
+- `full` (default): build + flash + capture
+- `build-only`
+- `flash-capture`
+
+### Linux (Ubuntu/Debian)
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip git curl openocd make cmake gcc-arm-none-eabi
+
+git clone https://github.com/koutrolikos/rtms.git
+cd rtms
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+
+export RANGE_TEST_SERVER_URL="http://172.20.10.3:8000"
+export RANGE_TEST_OPENOCD_TARGET_CFG="target/stm32g4x.cfg"
+range-test-agent run
+```
+
+### Windows (PowerShell)
+
+```powershell
+winget install -e --id Python.Python.3.11
+winget install -e --id Git.Git
+winget install -e --id xpack-dev-tools.OpenOCD
+
+git clone https://github.com/koutrolikos/rtms.git
+cd rtms
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e .
+
+$env:RANGE_TEST_SERVER_URL = "http://172.20.10.3:8000"
+$env:RANGE_TEST_OPENOCD_TARGET_CFG = "target/stm32g4x.cfg"
+range-test-agent run
+```
+
+If OpenOCD is not on PATH:
+
+```powershell
+$env:RANGE_TEST_OPENOCD_BIN = "C:\openocd\xpack-openocd-0.12.0-7\bin\openocd.exe"
+$env:OPENOCD_SCRIPTS = "C:\openocd\xpack-openocd-0.12.0-7\openocd\scripts"
+```
+
+### One sanity check before `run`
+
+From the agent host:
+
+```bash
+curl http://172.20.10.3:8000/healthz
+```
+
+## Dependency Matrix (By Agent Capability)
+
+Install only what the host will do.
+
+- Core agent (always): Python 3.11+, pip/venv, server network access
+- Build-capable: `git` + build tools required by the repo recipe
+- High-Altitude-CC build recipe today: `make`, `cmake`, `arm-none-eabi-gcc`
+- Flash-capable: `openocd` + correct interface/target configs
+- Capture-capable: external capture tool used by `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` (unless simulated)
+
+Capability flags:
+
+```bash
+export RANGE_TEST_AGENT_BUILD_CAPABLE=1
+export RANGE_TEST_AGENT_FLASH_CAPABLE=1
+export RANGE_TEST_AGENT_CAPTURE_CAPABLE=1
+```
+
+Build-only host:
+
+```bash
+export RANGE_TEST_AGENT_BUILD_CAPABLE=1
+export RANGE_TEST_AGENT_FLASH_CAPABLE=0
+export RANGE_TEST_AGENT_CAPTURE_CAPABLE=0
+```
+
+Flash/capture-only host:
+
+```bash
+export RANGE_TEST_AGENT_BUILD_CAPABLE=0
+export RANGE_TEST_AGENT_FLASH_CAPABLE=1
+export RANGE_TEST_AGENT_CAPTURE_CAPABLE=1
+```
+
 ## Install
 
 ```bash
@@ -69,7 +177,7 @@ By default the server binds to `0.0.0.0:8000` and auto-detects a LAN URL for age
 If the detected address is wrong, set:
 
 ```bash
-export RANGE_TEST_SERVER_PUBLIC_BASE_URL="http://192.168.1.50:8000"
+export RANGE_TEST_SERVER_PUBLIC_BASE_URL="http://172.20.10.3:8000"
 ```
 
 Key env vars:
@@ -85,7 +193,7 @@ Key env vars:
 ## Run Agent
 
 ```bash
-export RANGE_TEST_SERVER_URL="http://192.168.1.50:8000"
+export RANGE_TEST_SERVER_URL="http://172.20.10.3:8000"
 range-test-agent run
 ```
 
@@ -99,7 +207,7 @@ export RANGE_TEST_SERVER_URL="http://127.0.0.1:8000"
 From Windows PowerShell:
 
 ```powershell
-$env:RANGE_TEST_SERVER_URL = "http://192.168.1.50:8000"
+$env:RANGE_TEST_SERVER_URL = "http://172.20.10.3:8000"
 $env:RANGE_TEST_OPENOCD_TARGET_CFG = "target/stm32g4x.cfg"
 range-test-agent run
 ```
@@ -107,7 +215,7 @@ range-test-agent run
 Verify connectivity from the agent machine before starting the agent:
 
 ```bash
-curl http://192.168.1.50:8000/healthz
+curl http://172.20.10.3:8000/healthz
 ```
 
 Key env vars:

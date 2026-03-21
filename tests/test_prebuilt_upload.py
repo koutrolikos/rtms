@@ -12,7 +12,7 @@ def test_upload_prebuilt_artifact_creates_manual_bundle(tmp_path: Path) -> None:
     elf_path.write_bytes(b"firmware")
     runtime = AgentRuntime(
         AgentSettings(
-            server_url="http://192.168.1.50:8000",
+            server_url="http://172.20.10.3:8000",
             data_dir=tmp_path / "agent_data",
         )
     )
