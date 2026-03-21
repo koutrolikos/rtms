@@ -3,23 +3,120 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{% block title %}RF Range-Test MVP{% endblock %}</title>
+    <title>{% block title %}RTMS{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
     <header class="topbar">
-      <div>
-        <p class="eyebrow">Distributed RF Orchestration</p>
-        <h1><a href="/hosts">RF Range-Test MVP</a></h1>
+      <div class="topbar-brand">
+        <p class="eyebrow">Range Test Management Server</p>
+        <h1><a href="/hosts">RTMS</a></h1>
       </div>
-      <nav>
-        <a href="/hosts">Hosts</a>
-        <a href="/sessions/new">New Session</a>
+      <nav class="topbar-nav">
+        <a href="/hosts" class="{% if request.url.path == '/hosts' or request.url.path == '/' %}active{% endif %}">Hosts</a>
+        <a href="/sessions/new" class="{% if request.url.path == '/sessions/new' %}active{% endif %}">New Session</a>
       </nav>
     </header>
     <main class="page">
       {% block content %}{% endblock %}
     </main>
+    <div class="copy-toast" id="copy-toast" aria-live="polite" aria-atomic="true"></div>
+    <script>
+      (() => {
+        const toast = document.getElementById("copy-toast");
+        let toastTimer = 0;
+
+        const showToast = (message, isError = false) => {
+          if (!toast) {
+            return;
+          }
+          toast.textContent = message;
+          toast.classList.toggle("visible", true);
+          toast.classList.toggle("error", isError);
+          window.clearTimeout(toastTimer);
+          toastTimer = window.setTimeout(() => {
+            toast.classList.remove("visible", "error");
+          }, 1800);
+        };
+
+        const fallbackCopy = async (text) => {
+          const probe = document.createElement("textarea");
+          probe.value = text;
+          probe.setAttribute("readonly", "");
+          probe.style.position = "absolute";
+          probe.style.left = "-9999px";
+          document.body.appendChild(probe);
+          probe.select();
+          const ok = document.execCommand("copy");
+          document.body.removeChild(probe);
+          if (!ok) {
+            throw new Error("copy failed");
+          }
+        };
+
+        const copyText = async (text) => {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            return;
+          }
+          await fallbackCopy(text);
+        };
+
+        document.addEventListener("click", async (event) => {
+          const button = event.target.closest("[data-copy-text]");
+          if (!button) {
+            return;
+          }
+          const value = button.getAttribute("data-copy-text") || "";
+          const label = button.getAttribute("data-copy-label") || "value";
+          if (!value) {
+            return;
+          }
+          try {
+            await copyText(value);
+            const original = button.dataset.copyOriginal || button.textContent;
+            button.dataset.copyOriginal = original;
+            button.textContent = "Copied";
+            button.classList.add("copied");
+            window.setTimeout(() => {
+              button.textContent = original;
+              button.classList.remove("copied");
+            }, 1400);
+            showToast(`${label} copied`);
+          } catch (_error) {
+            showToast(`Failed to copy ${label}`, true);
+          }
+        });
+
+        document.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+            return;
+          }
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) {
+            return;
+          }
+          if (target.tagName === "TEXTAREA") {
+            return;
+          }
+          const actionId = target.getAttribute("data-enter-click");
+          if (!actionId) {
+            return;
+          }
+          const action = document.getElementById(actionId);
+          if (!(action instanceof HTMLButtonElement) && !(action instanceof HTMLAnchorElement)) {
+            return;
+          }
+          event.preventDefault();
+          action.click();
+        });
+      })();
+    </script>
   </body>
 </html>
-

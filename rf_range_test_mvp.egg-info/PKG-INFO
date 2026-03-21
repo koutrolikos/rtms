@@ -14,7 +14,7 @@ Requires-Dist: python-multipart>=0.0.9
 Provides-Extra: dev
 Requires-Dist: pytest>=8.2.2; extra == "dev"
 
-# RF Range-Test MVP
+# RTMS
 
 Distributed RF range-test orchestration MVP with:
 

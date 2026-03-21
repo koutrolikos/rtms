@@ -155,6 +155,7 @@ def test_hosts_page_after_agent_register(db_session) -> None:
     assert "Bench Agent" in hosts_page.text
     assert "Build" in hosts_page.text
     assert "build_capable" not in hosts_page.text
+    assert 'data-copy-label="public url"' in hosts_page.text
 
 
 def test_start_session_uses_public_base_url_for_agent_downloads(db_session, monkeypatch) -> None:
@@ -401,6 +402,11 @@ def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
     assert "Config Debug 0" in response.text
     assert "requested_build_config" not in response.text
     assert "build log" in response.text
+    assert 'data-copy-label="session id"' in response.text
+    assert 'data-copy-label="artifact id"' in response.text
+    assert 'data-copy-label="git sha"' in response.text
+    assert 'data-enter-click="search-commits"' in response.text
+    assert 'data-enter-click="load-build-config"' in response.text
     assert f"/api/raw-artifacts/{raw_artifact.id}/download" in response.text
 
 
@@ -439,3 +445,4 @@ def test_report_page_renders_summaries_without_raw_payload_dumps(db_session) -> 
     assert "Session Event Audit" in report_page.text
     assert "Vehicle entered tree line" in report_page.text
     assert "payload_json" not in report_page.text
+    assert 'data-copy-label="session id"' in report_page.text

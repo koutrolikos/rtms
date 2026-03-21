@@ -1,9 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Report{% endblock %}
 {% block content %}
+{% from "_summary.html" import render_copy_value %}
 <section class="panel">
   <div class="panel-head">
-    <h2>HTML Report</h2>
+    <div>
+      <h2>HTML Report</h2>
+      <div class="panel-inline-meta">
+        <span class="hero-meta-label">Session ID</span>
+        {{ render_copy_value(session.id, session.id, "session id") }}
+      </div>
+    </div>
     <a class="button secondary" href="/sessions/{{ session.id }}">Back to Session</a>
   </div>
   <div class="report-shell">
@@ -11,4 +18,3 @@
   </div>
 </section>
 {% endblock %}
-

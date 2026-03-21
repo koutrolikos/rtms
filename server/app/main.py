@@ -24,7 +24,7 @@ def create_app() -> FastAPI:
     settings.raw_dir.mkdir(parents=True, exist_ok=True)
     settings.reports_dir.mkdir(parents=True, exist_ok=True)
     init_db()
-    app = FastAPI(title="RF Range-Test MVP")
+    app = FastAPI(title="RTMS")
     app.include_router(agent_router)
     app.include_router(operator_router)
     app.mount(
