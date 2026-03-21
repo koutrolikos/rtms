@@ -1,17 +1,18 @@
+{% from "_summary.html" import render_summary %}
 <section class="report">
   <header class="report-header">
     <p class="eyebrow">Session Report</p>
     <h2>{{ session.name }}</h2>
-    <p class="muted">Status: {{ session.status }} | Started: {{ session.started_at }} | Ended: {{ session.ended_at }}</p>
+    <p class="muted">Status: {{ session.status | humanize_token }} | Started: {{ session.started_at }} | Ended: {{ session.ended_at }}</p>
   </header>
 
   <section class="panel">
     <h3>Summary</h3>
     <dl class="meta">
-      <div><dt>TX Host</dt><dd>{{ session.tx_agent_id or "n/a" }}</dd></div>
-      <div><dt>RX Host</dt><dd>{{ session.rx_agent_id or "n/a" }}</dd></div>
-      <div><dt>TX Artifact</dt><dd>{{ session.tx_artifact_id or "n/a" }}</dd></div>
-      <div><dt>RX Artifact</dt><dd>{{ session.rx_artifact_id or "n/a" }}</dd></div>
+      <div><dt>TX Host</dt><dd>{{ host_labels.get(session.tx_agent_id, session.tx_agent_id) if session.tx_agent_id else "n/a" }}</dd></div>
+      <div><dt>RX Host</dt><dd>{{ host_labels.get(session.rx_agent_id, session.rx_agent_id) if session.rx_agent_id else "n/a" }}</dd></div>
+      <div><dt>TX Artifact</dt><dd>{{ session.tx_artifact_id | short_id if session.tx_artifact_id else "n/a" }}</dd></div>
+      <div><dt>RX Artifact</dt><dd>{{ session.rx_artifact_id | short_id if session.rx_artifact_id else "n/a" }}</dd></div>
       <div><dt>Location</dt><dd>{{ session.location_text or "n/a" }}</dd></div>
       <div><dt>Notes</dt><dd>{{ session.initial_notes or "-" }}</dd></div>
     </dl>
@@ -19,14 +20,16 @@
 
   <section class="panel">
     <h3>Metrics</h3>
-    <table>
-      <thead><tr><th>Metric</th><th>Value</th></tr></thead>
-      <tbody>
-        {% for key, value in merge.metrics.items() %}
-        <tr><td>{{ key }}</td><td>{{ value }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="table-shell">
+      <table>
+        <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+        <tbody>
+          {% for key, value in merge.metrics.items() %}
+          <tr><td>{{ key | humanize_token }}</td><td>{{ value }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 
   <section class="panel">
@@ -43,63 +46,92 @@
   <section class="panel">
     <h3>Parse Diagnostics</h3>
     <p class="muted">Compatibility-mode parser. Replace parser rules with the authoritative logging spec when provided.</p>
-    <pre>{{ merge.correction_diagnostics }}</pre>
-    <pre>{{ merge.parse_errors }}</pre>
+    <div class="grid two">
+      {% for role, correction in merge.correction_diagnostics.items() %}
+      <article class="config-block">
+        <div class="panel-head">
+          <h4>{{ role }} Time Correction</h4>
+        </div>
+        {{ render_summary(summarize_time_correction(correction), "No correction details.") }}
+      </article>
+      {% else %}
+      <p class="muted">No time-correction diagnostics captured.</p>
+      {% endfor %}
+    </div>
+    <div class="stack">
+      <h4>Parse Errors</h4>
+      <ul class="timeline">
+        {% for error in merge.parse_errors %}
+        <li>{{ error }}</li>
+        {% else %}
+        <li class="muted">No parse errors recorded.</li>
+        {% endfor %}
+      </ul>
+    </div>
   </section>
 
   <section class="panel">
     <h3>Merged Timeline</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Corrected Timestamp</th>
-          <th>Role</th>
-          <th>Event</th>
-          <th>Seq</th>
-          <th>Raw Line</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for event in merge.merged_events %}
-        <tr>
-          <td>{{ event.corrected_timestamp or "-" }}</td>
-          <td>{{ event.role.value if event.role else "session" }}</td>
-          <td>{{ event.event_name }}</td>
-          <td>{{ event.packet_sequence or "-" }}</td>
-          <td><code>{{ event.raw_line }}</code></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="table-shell">
+      <table>
+        <thead>
+          <tr>
+            <th>Corrected Timestamp</th>
+            <th>Role</th>
+            <th>Event</th>
+            <th>Seq</th>
+            <th>Raw Line</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in merge.merged_events %}
+          <tr>
+            <td>{{ event.corrected_timestamp or "-" }}</td>
+            <td>{{ event.role.value if event.role else "session" }}</td>
+            <td>{{ event.event_name | humanize_token }}</td>
+            <td>{{ event.packet_sequence or "-" }}</td>
+            <td><div class="mono-wrap">{{ event.raw_line }}</div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 
   <section class="panel">
     <h3>Raw Artifacts</h3>
-    <table>
-      <thead><tr><th>Type</th><th>Role</th><th>Path</th></tr></thead>
-      <tbody>
-        {% for item in raw_artifacts %}
-        <tr><td>{{ item.type }}</td><td>{{ item.role or "session" }}</td><td>{{ item.storage_path }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="table-shell">
+      <table>
+        <thead><tr><th>Type</th><th>Role</th><th>Path</th></tr></thead>
+        <tbody>
+          {% for item in raw_artifacts %}
+          <tr>
+            <td>{{ item.type | humanize_token }}</td>
+            <td>{{ item.role or "session" }}</td>
+            <td>{{ item.storage_path | basename }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 
   <section class="panel">
     <h3>Session Event Audit</h3>
-    <table>
-      <thead><tr><th>Timestamp</th><th>Source</th><th>Type</th><th>Payload</th></tr></thead>
-      <tbody>
-        {% for item in events %}
-        <tr>
-          <td>{{ item.corrected_timestamp or item.created_at }}</td>
-          <td>{{ item.source_type }}</td>
-          <td>{{ item.event_type }}</td>
-          <td><code>{{ item.payload_json }}</code></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="table-shell">
+      <table>
+        <thead><tr><th>Timestamp</th><th>Source</th><th>Type</th><th>Summary</th></tr></thead>
+        <tbody>
+          {% for item in events %}
+          <tr>
+            <td>{{ item.corrected_timestamp or item.created_at }}</td>
+            <td>{{ describe_source(item.source_type, item.source_ref, host_labels) }}</td>
+            <td>{{ item.event_type | humanize_token }}</td>
+            <td>{{ render_summary(summarize_event_payload(item.event_type, item.payload_json)) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 </section>
-

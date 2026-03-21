@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from server.app.core.config import get_settings
 from server.app.db.session import get_db
 from server.app.models.entities import AgentHost, Artifact, RawArtifact
+from server.app.presentation import register_template_helpers
 from server.app.services.agents import visible_agent_status
 from server.app.services.github import GitHubService
 from server.app.services.parsing import merge_session_logs
@@ -33,23 +37,41 @@ from server.app.services.sessions import (
     update_session_metadata,
     create_session,
 )
+from shared.high_altitude_cc import (
+    HIGH_ALTITUDE_CC_APP_CONFIG_PATH,
+    HIGH_ALTITUDE_CC_REPO_ID,
+    high_altitude_cc_build_constraints,
+    parse_high_altitude_cc_build_config,
+)
 from shared.enums import ArtifactStatus, Role
 from shared.schemas import (
     AnnotationCreateRequest,
     AssignArtifactRequest,
     AssignHostsRequest,
     BuildRequest,
+    HighAltitudeCCBuildConfig,
+    RepoBuildConfigResponse,
     SessionCreateRequest,
     SessionUpdateRequest,
 )
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
+register_template_helpers(templates.env)
 
 router = APIRouter(tags=["operator"])
 
 
 def _github() -> GitHubService:
     return GitHubService(get_settings())
+
+
+def _parse_build_config_json(build_config_json: str | None) -> HighAltitudeCCBuildConfig | None:
+    if not build_config_json:
+        return None
+    try:
+        return HighAltitudeCCBuildConfig.model_validate(json.loads(build_config_json))
+    except (json.JSONDecodeError, ValidationError) as exc:
+        raise HTTPException(status_code=400, detail=f"invalid build_config_json: {exc}") from exc
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -119,12 +141,14 @@ def session_detail(request: Request, session_id: str, db: Session = Depends(get_
     session = get_session_or_404(db, session_id)
     report = session_report(db, session.id)
     github = _github()
+    hosts = db.query(AgentHost).order_by(AgentHost.name.asc()).all()
     return templates.TemplateResponse(
         name="session_detail.html",
         request=request,
         context={
             "session": session,
-            "hosts": db.query(AgentHost).order_by(AgentHost.name.asc()).all(),
+            "hosts": hosts,
+            "host_labels": {host.id: host.label or host.name for host in hosts},
             "artifacts": session_artifacts(db, session.id),
             "roles": session_roles(db, session.id),
             "annotations": annotations(db, session.id),
@@ -193,12 +217,12 @@ def session_assign_artifact_action(
 
 @router.post("/sessions/{session_id}/builds")
 def session_build_action(
-    request: Request,
     session_id: str,
     repo_id: str = Form(...),
     git_sha: str = Form(...),
     build_agent_id: str = Form(...),
-    role: str | None = Form(None),
+    role: str = Form(...),
+    build_config_json: str | None = Form(None),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
     github = _github()
@@ -212,6 +236,7 @@ def session_build_action(
             repo_id=repo_id,
             git_sha=git_sha,
             build_agent_id=build_agent_id,
+            build_config=_parse_build_config_json(build_config_json),
         ),
         repo=repo,
     )
@@ -442,6 +467,27 @@ def repos_json() -> list[dict]:
     return [repo.model_dump(mode="json") for repo in github.list_repos()]
 
 
+@router.get("/api/repos/{repo_id}/build-config")
+def repo_build_config_json(repo_id: str, git_sha: str) -> dict:
+    github = _github()
+    repo = github.get_repo(repo_id)
+    if repo.id != HIGH_ALTITUDE_CC_REPO_ID:
+        raise HTTPException(status_code=404, detail=f"build-config endpoint not supported for {repo_id}")
+    try:
+        source = github.fetch_file_at_ref(repo.id, HIGH_ALTITUDE_CC_APP_CONFIG_PATH, git_sha)
+        build_config = parse_high_altitude_cc_build_config(source)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return RepoBuildConfigResponse(
+        repo_id=repo.id,
+        git_sha=git_sha,
+        build_config=build_config,
+        constraints=high_altitude_cc_build_constraints(),
+    ).model_dump(mode="json")
+
+
 @router.get("/healthz")
 def healthz() -> dict:
     settings = get_settings()
@@ -455,7 +501,12 @@ def healthz() -> dict:
 
 @router.get("/api/repos/{repo_id}/commits")
 def commits_json(repo_id: str, q: str | None = None) -> list[dict]:
-    return _github().browse_commits(repo_id, query=q)
+    try:
+        return _github().browse_commits(repo_id, query=q)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/api/artifacts/{artifact_id}/download")

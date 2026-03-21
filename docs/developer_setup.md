@@ -1,4 +1,4 @@
-i # Developer Setup
+# Developer Setup
 
 ## Install
 
@@ -11,6 +11,12 @@ pip install -e '.[dev]'
 ## Configure Repos
 
 The server reads repo definitions from `server_data/repos.json` by default.
+
+This build capability is recipe-driven, not generic source compilation. Each
+repo entry must describe a build that works from a clean clone on the build
+agent. If a firmware repo depends on generated IDE outputs, untracked makefiles,
+local toolchain wrappers, or other files that are not present in Git, the agent
+build will fail and you should use prebuilt ELF upload instead.
 
 Example:
 
@@ -41,6 +47,18 @@ Example:
 ]
 ```
 
+The bundled `High-Altitude-CC` example is configured as a single repo entry
+built through:
+
+```bash
+make -f Debug/makefile DEBUG=1 all hex bin
+```
+
+RTMS resolves the operator-selected TX/RX role plus the exposed firmware build
+config into `CDEFS_EXTRA` overrides, queues the build job from the server UI,
+uploads the build log as a raw artifact, and removes the agent's local build
+workspace after a successful upload.
+
 ## Run Server
 
 ```bash
@@ -69,6 +87,13 @@ Key env vars:
 ```bash
 export RANGE_TEST_SERVER_URL="http://192.168.1.50:8000"
 range-test-agent run
+```
+
+If the agent is running on the same machine as the server for local
+development, use:
+
+```bash
+export RANGE_TEST_SERVER_URL="http://127.0.0.1:8000"
 ```
 
 From Windows PowerShell:

@@ -234,6 +234,10 @@ class AgentRuntime:
             time.sleep(self.settings.poll_interval_seconds)
 
     def close(self) -> None:
+        try:
+            self.build_executor.cleanup_stale_build_artifacts()
+        except Exception:  # pragma: no cover - best-effort shutdown cleanup
+            logger.exception("failed to clean stale build artifacts during shutdown")
         self.client.close()
 
     def build_local_upload(

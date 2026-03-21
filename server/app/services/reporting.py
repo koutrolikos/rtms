@@ -5,7 +5,8 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 
-from server.app.models.entities import Report, Session as SessionModel
+from server.app.models.entities import AgentHost, Report, Session as SessionModel
+from server.app.presentation import register_template_helpers
 from server.app.services.parsing import emit_parser_output, merge_session_logs
 from server.app.services.sessions import raw_artifacts as list_raw_artifacts
 from server.app.services.sessions import register_raw_artifact, session_events, session_report, session_roles
@@ -56,12 +57,18 @@ def generate_report(
         loader=FileSystemLoader(str(template_dir)),
         autoescape=select_autoescape(["html", "xml"]),
     )
+    register_template_helpers(environment)
+    host_labels = {
+        host.id: host.label or host.name
+        for host in db.query(AgentHost).order_by(AgentHost.name.asc()).all()
+    }
     rendered = environment.get_template("report_fragment.html").render(
         {
             "session": session,
             "merge": merge,
             "raw_artifacts": list_raw_artifacts(db, session.id),
             "events": session_events(db, session.id),
+            "host_labels": host_labels,
         }
     )
     html_path = reports_dir / session.id / "report.html"

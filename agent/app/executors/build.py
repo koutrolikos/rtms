@@ -13,7 +13,8 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from agent.app.core.config import AgentSettings
 from agent.app.services.api_client import ServerClient
 from agent.app.services.bundles import create_artifact_bundle
-from shared.enums import ArtifactOriginType, Role
+from shared.enums import ArtifactOriginType, RawArtifactType, Role
+from shared.high_altitude_cc import HIGH_ALTITUDE_CC_REPO_ID, build_high_altitude_cc_cdefs
 from shared.schemas import BuildArtifactPayload, JobResult
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,11 @@ class BuildExecutor:
     ) -> JobResult:
         repo_root = self.settings.repo_workspace_root / payload.repo.id
         repo_context: dict | None = None
+        build_log_path: Path | None = None
+        checkout_subdir = payload.repo.build_recipe.checkout_subdir
+        output_dir: Path | None = None
+        resolved_build_command = payload.repo.build_recipe.build_command
+        resolved_cdefs_extra: list[str] = []
         try:
             self._checkout(
                 repo_root,
@@ -60,21 +66,23 @@ class BuildExecutor:
                 payload.git_sha,
                 default_branch=payload.repo.default_branch,
             )
-            repo_context = self._repo_context(repo_root)
-            build_dir = repo_root / payload.repo.build_recipe.checkout_subdir
+            repo_context = self._repo_context(repo_root, checkout_subdir=checkout_subdir)
+            build_dir = repo_root / checkout_subdir
             if not build_dir.exists():
                 raise BuildFailure(
                     "checkout_subdir_missing",
                     {
-                        "checkout_subdir": payload.repo.build_recipe.checkout_subdir,
+                        "checkout_subdir": checkout_subdir,
                         "repo_root": str(repo_root),
                     },
                 )
-            output_dir = self.settings.build_root / payload.session_id / payload.artifact_id
+            output_dir = self.settings.build_root / payload.session_id / (payload.artifact_id or "local-build")
             output_dir.mkdir(parents=True, exist_ok=True)
             build_log_path = output_dir / "build.log"
+            resolved_build_command, resolved_cdefs_extra = self._resolve_build_command(payload)
+            self._preflight_command_inputs(resolved_build_command, cwd=build_dir)
             self._run_command(
-                payload.repo.build_recipe.build_command,
+                resolved_build_command,
                 cwd=build_dir,
                 env=payload.repo.build_recipe.env,
                 timeout_seconds=payload.repo.build_recipe.timeout_seconds,
@@ -97,7 +105,11 @@ class BuildExecutor:
                 rtt_symbol=payload.repo.build_recipe.rtt_symbol,
                 build_metadata={
                     "repo_id": payload.repo.id,
-                    "build_log": str(build_log_path),
+                    "requested_build_config": (
+                        payload.build_config.model_dump(mode="json") if payload.build_config else None
+                    ),
+                    "resolved_build_command": resolved_build_command,
+                    "resolved_cdefs_extra": resolved_cdefs_extra,
                 },
             )
             upload = client.upload_artifact_bundle(
@@ -110,19 +122,56 @@ class BuildExecutor:
                 source_repo=payload.repo.full_name,
                 git_sha=payload.git_sha,
             )
+            diagnostics = {
+                "bundle_path": str(bundle_path),
+                "manifest": manifest.model_dump(mode="json"),
+                "repo_context": repo_context
+                or self._repo_context(repo_root, checkout_subdir=checkout_subdir),
+                "resolved_build_command": resolved_build_command,
+                "resolved_cdefs_extra": resolved_cdefs_extra,
+            }
+            uploaded_raw_artifacts: list[dict] = []
+            if build_log_path.exists():
+                try:
+                    raw_upload = client.upload_raw_artifact(
+                        path=build_log_path,
+                        session_id=payload.session_id,
+                        artifact_type=RawArtifactType.BUILD_LOG,
+                        role=payload.role_hint,
+                        metadata={
+                            "artifact_id": upload.artifact_id,
+                            "git_sha": payload.git_sha,
+                            "repo_id": payload.repo.id,
+                            "stage": "build",
+                        },
+                    )
+                    uploaded_raw_artifacts.append(
+                        {
+                            "raw_artifact_id": raw_upload.raw_artifact_id,
+                            "storage_path": raw_upload.storage_path,
+                            "type": RawArtifactType.BUILD_LOG.value,
+                        }
+                    )
+                except Exception as exc:  # pragma: no cover - best-effort side effect
+                    diagnostics["build_log_upload_error"] = str(exc)
+            try:
+                diagnostics["cleanup_paths"] = self._cleanup_success_paths(repo_root, output_dir)
+            except Exception as exc:  # pragma: no cover - best-effort side effect
+                diagnostics["cleanup_error"] = str(exc)
             return JobResult(
                 success=True,
                 artifact_id=upload.artifact_id,
-                diagnostics={
-                    "bundle_path": str(bundle_path),
-                    "manifest": manifest.model_dump(mode="json"),
-                    "build_log_path": str(build_log_path),
-                    "repo_context": repo_context or self._repo_context(repo_root),
-                },
+                diagnostics=diagnostics,
+                uploaded_raw_artifacts=uploaded_raw_artifacts,
             )
         except BuildFailure as exc:
             diagnostics = dict(exc.diagnostics)
-            diagnostics.setdefault("repo_context", repo_context or self._repo_context(repo_root))
+            diagnostics.setdefault(
+                "repo_context",
+                repo_context or self._repo_context(repo_root, checkout_subdir=checkout_subdir),
+            )
+            if build_log_path is not None:
+                diagnostics.setdefault("build_log_path", str(build_log_path))
             return JobResult(success=False, failure_reason=exc.reason, diagnostics=diagnostics)
         except Exception as exc:  # pragma: no cover - defensive wrapper
             return JobResult(
@@ -131,9 +180,55 @@ class BuildExecutor:
                 diagnostics={
                     "error": str(exc),
                     "artifact_id": payload.artifact_id,
-                    "repo_context": repo_context or self._repo_context(repo_root),
+                    "repo_context": repo_context
+                    or self._repo_context(repo_root, checkout_subdir=checkout_subdir),
+                    **({"build_log_path": str(build_log_path)} if build_log_path is not None else {}),
                 },
             )
+
+    def _resolve_build_command(self, payload: BuildArtifactPayload) -> tuple[str, list[str]]:
+        command = payload.repo.build_recipe.build_command
+        if payload.repo.id != HIGH_ALTITUDE_CC_REPO_ID:
+            return command, []
+        if payload.role_hint is None or payload.build_config is None:
+            raise BuildFailure(
+                "missing_build_config",
+                {
+                    "repo_id": payload.repo.id,
+                    "role_hint": payload.role_hint.value if payload.role_hint else None,
+                    "has_build_config": payload.build_config is not None,
+                },
+            )
+        cdefs_extra = build_high_altitude_cc_cdefs(payload.role_hint, payload.build_config)
+        return f"{command} CDEFS_EXTRA={shlex.quote(' '.join(cdefs_extra))}", cdefs_extra
+
+    def _cleanup_success_paths(self, repo_root: Path, output_dir: Path) -> list[str]:
+        removed: list[str] = []
+        for path in (repo_root, output_dir):
+            if not path.exists():
+                continue
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            removed.append(str(path))
+        return removed
+
+    def cleanup_stale_build_artifacts(self) -> list[str]:
+        removed: list[str] = []
+        for root in (self.settings.repo_workspace_root, self.settings.build_root):
+            if not root.exists():
+                continue
+            for path in root.iterdir():
+                if path.is_dir():
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    try:
+                        path.unlink()
+                    except FileNotFoundError:
+                        pass
+                removed.append(str(path))
+        return removed
 
     def _checkout(
         self,
@@ -242,14 +337,17 @@ class BuildExecutor:
             netloc = f"{netloc}:{parsed.port}"
         return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
 
-    def _repo_context(self, repo_root: Path) -> dict:
+    def _repo_context(self, repo_root: Path, *, checkout_subdir: str = ".") -> dict:
+        checkout_root = repo_root / checkout_subdir
         context = {
             "repo_root": str(repo_root),
             "exists": repo_root.exists(),
             "top_level_entries": [],
             "head_sha": None,
-            "expected_debug_makefile": str(repo_root / "Debug" / "makefile"),
-            "has_debug_makefile": (repo_root / "Debug" / "makefile").exists(),
+            "checkout_subdir": checkout_subdir,
+            "checkout_root": str(checkout_root),
+            "checkout_subdir_exists": checkout_root.exists(),
+            "checkout_subdir_entries": [],
         }
         if not repo_root.exists():
             return context
@@ -257,6 +355,13 @@ class BuildExecutor:
             context["top_level_entries"] = sorted(item.name for item in repo_root.iterdir())[:50]
         except Exception:
             pass
+        if checkout_root.exists() and checkout_root.is_dir():
+            try:
+                context["checkout_subdir_entries"] = sorted(
+                    item.name for item in checkout_root.iterdir()
+                )[:50]
+            except Exception:
+                pass
         if (repo_root / ".git").exists():
             try:
                 completed = subprocess.run(
@@ -272,6 +377,77 @@ class BuildExecutor:
             except Exception:
                 pass
         return context
+
+    def _preflight_command_inputs(self, command: str, *, cwd: Path) -> None:
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            return
+        first_segment: list[str] = []
+        for token in tokens:
+            if token in {"&&", "||", ";", "|"}:
+                break
+            first_segment.append(token)
+        if not first_segment:
+            return
+
+        referenced_inputs: list[dict[str, str]] = []
+        missing_inputs: list[dict[str, str]] = []
+
+        def record_required_input(kind: str, raw_path: str) -> None:
+            resolved = Path(raw_path)
+            if not resolved.is_absolute():
+                resolved = cwd / resolved
+            entry = {
+                "kind": kind,
+                "path": raw_path,
+                "resolved_path": str(resolved),
+            }
+            referenced_inputs.append(entry)
+            if not resolved.exists():
+                missing_inputs.append(entry)
+
+        executable = Path(first_segment[0]).name
+        index = 1
+        if executable in {"make", "gmake"}:
+            while index < len(first_segment):
+                token = first_segment[index]
+                if token in {"-f", "--file"} and index + 1 < len(first_segment):
+                    record_required_input("makefile", first_segment[index + 1])
+                    index += 2
+                    continue
+                if token.startswith("-f") and token not in {"-f", "--file"}:
+                    record_required_input("makefile", token[2:])
+                elif token in {"-C", "--directory"} and index + 1 < len(first_segment):
+                    record_required_input("working_dir", first_segment[index + 1])
+                    index += 2
+                    continue
+                elif token.startswith("-C") and token not in {"-C", "--directory"}:
+                    record_required_input("working_dir", token[2:])
+                index += 1
+        elif executable == "cmake":
+            while index < len(first_segment):
+                token = first_segment[index]
+                if token in {"-S", "--source"} and index + 1 < len(first_segment):
+                    record_required_input("source_dir", first_segment[index + 1])
+                    index += 2
+                    continue
+                if token == "--build" and index + 1 < len(first_segment):
+                    record_required_input("build_dir", first_segment[index + 1])
+                    index += 2
+                    continue
+                index += 1
+
+        if missing_inputs:
+            raise BuildFailure(
+                "build_inputs_missing",
+                {
+                    "command": command,
+                    "cwd": str(cwd),
+                    "missing_inputs": missing_inputs,
+                    "referenced_inputs": referenced_inputs,
+                },
+            )
 
     def _run_command(
         self,
@@ -290,18 +466,43 @@ class BuildExecutor:
             merged_env.update(env)
         shown_command = display_command or command
         logger.info("running build command: %s", shown_command)
-        completed = subprocess.run(
-            command,
-            shell=True,
-            cwd=str(cwd) if cwd else None,
-            env=merged_env,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-        )
+        try:
+            completed = subprocess.run(
+                command,
+                shell=True,
+                cwd=str(cwd) if cwd else None,
+                env=merged_env,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+            )
+            stdout = completed.stdout
+            stderr = completed.stderr
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout or b"").decode(
+                "utf-8", errors="replace"
+            )
+            stderr = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr or b"").decode(
+                "utf-8", errors="replace"
+            )
+            if log_path is not None:
+                log_path.write_text(
+                    f"$ {shown_command}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}\n",
+                    encoding="utf-8",
+                )
+            raise BuildFailure(
+                "command_timed_out",
+                {
+                    "command": shown_command,
+                    "cwd": str(cwd) if cwd else None,
+                    "timeout_seconds": timeout_seconds,
+                    "stdout": stdout[-4000:],
+                    "stderr": stderr[-4000:],
+                },
+            ) from exc
         if log_path is not None:
             log_path.write_text(
-                f"$ {shown_command}\n\nstdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}\n",
+                f"$ {shown_command}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}\n",
                 encoding="utf-8",
             )
         if completed.returncode != 0:
@@ -311,8 +512,8 @@ class BuildExecutor:
                     "command": shown_command,
                     "cwd": str(cwd) if cwd else None,
                     "return_code": completed.returncode,
-                    "stdout": completed.stdout[-4000:],
-                    "stderr": completed.stderr[-4000:],
+                    "stdout": stdout[-4000:],
+                    "stderr": stderr[-4000:],
                 },
             )
 

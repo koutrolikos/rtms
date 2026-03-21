@@ -86,6 +86,7 @@ class RawArtifactType(StrEnum):
     OPENOCD_LOG = "openocd_log"
     AGENT_EVENT_LOG = "agent_event_log"
     TIMING_SAMPLES = "timing_samples"
+    BUILD_LOG = "build_log"
     PARSER_OUTPUT = "parser_output"
     OTHER = "other"
 
@@ -117,4 +118,3 @@ class TimestampKind(StrEnum):
     ABSOLUTE = "absolute"
     RELATIVE = "relative"
     NONE = "none"
-

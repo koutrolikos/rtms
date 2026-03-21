@@ -21,6 +21,7 @@ from server.app.models.entities import (
     SessionRoleRun,
 )
 from server.app.services import jobs as job_service
+from shared.high_altitude_cc import HIGH_ALTITUDE_CC_REPO_ID
 from shared.enums import (
     ArtifactOriginType,
     ArtifactStatus,
@@ -208,6 +209,8 @@ def request_build(
     request: BuildRequest,
     repo: ConfiguredRepo,
 ) -> tuple[Artifact, Job]:
+    if repo.id == HIGH_ALTITUDE_CC_REPO_ID and request.build_config is None:
+        raise HTTPException(status_code=400, detail="high-altitude-cc builds require build_config")
     session = get_session_or_404(db, request.session_id)
     artifact = Artifact(
         session_id=session.id,
@@ -216,8 +219,14 @@ def request_build(
         source_repo=repo.full_name,
         git_sha=request.git_sha,
         producing_agent_id=request.build_agent_id,
-        role_compatibility_json=[request.role.value] if request.role else [],
-        metadata_json={"repo_id": repo.id, "auto_assign_role": request.role.value if request.role else None},
+        role_compatibility_json=[request.role.value],
+        metadata_json={
+            "repo_id": repo.id,
+            "auto_assign_role": request.role.value,
+            "requested_build_config": (
+                request.build_config.model_dump(mode="json") if request.build_config else None
+            ),
+        },
     )
     db.add(artifact)
     db.commit()
@@ -234,9 +243,10 @@ def request_build(
         payload={
             "artifact_id": artifact.id,
             "session_id": session.id,
-            "role_hint": request.role.value if request.role else None,
+            "role_hint": request.role.value,
             "repo": repo.model_dump(mode="json"),
             "git_sha": request.git_sha,
+            "build_config": request.build_config.model_dump(mode="json") if request.build_config else None,
         },
     )
     log_event(
@@ -649,11 +659,18 @@ def handle_job_result(
         return job
     if job.type == JobType.BUILD_ARTIFACT.value:
         artifact_id = result.artifact_id or job.payload_json.get("artifact_id")
-        if artifact_id and not result.success:
+        if artifact_id:
             artifact = db.get(Artifact, artifact_id)
             if artifact is not None:
+                metadata = dict(artifact.metadata_json or {})
+                if result.uploaded_raw_artifacts:
+                    metadata["uploaded_raw_artifacts"] = result.uploaded_raw_artifacts
+                if result.diagnostics.get("build_log_upload_error"):
+                    metadata["build_log_upload_error"] = result.diagnostics["build_log_upload_error"]
+                artifact.metadata_json = metadata
+            if artifact is not None and not result.success:
                 artifact.status = ArtifactStatus.FAILED.value
-                db.commit()
+            db.commit()
         if not result.success:
             session.status = transition_session(SessionState(session.status), SessionState.SELECTING_ARTIFACTS).value
             db.commit()

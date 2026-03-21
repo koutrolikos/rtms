@@ -1,35 +1,18 @@
 [
   {
-    "id": "high-altitude-cc-tx-debug",
-    "display_name": "High-Altitude-CC TX Debug RTT",
+    "id": "high-altitude-cc",
+    "display_name": "High-Altitude-CC",
     "full_name": "koutrolikos/High-Altitude-CC",
     "clone_url": "https://github.com/koutrolikos/High-Altitude-CC.git",
     "api_url": "https://api.github.com",
     "default_branch": "dev",
     "build_recipe": {
-      "build_command": "make -f Debug/makefile DEBUG=1 CDEFS_EXTRA='-DAPP_ROLE_MODE=APP_ROLE_MODE_TX -DAPP_DEBUG_ENABLE=1'",
+      "build_command": "make -f Debug/makefile DEBUG=1 all hex bin",
       "artifact_globs": [
-        "build/debug/High-Altitude-CC.elf"
-      ],
-      "elf_glob": "build/debug/High-Altitude-CC.elf",
-      "flash_image_glob": "build/debug/High-Altitude-CC.elf",
-      "checkout_subdir": ".",
-      "timeout_seconds": 1200,
-      "env": {},
-      "rtt_symbol": "_SEGGER_RTT"
-    }
-  },
-  {
-    "id": "high-altitude-cc-rx-debug",
-    "display_name": "High-Altitude-CC RX Debug RTT",
-    "full_name": "koutrolikos/High-Altitude-CC",
-    "clone_url": "https://github.com/koutrolikos/High-Altitude-CC.git",
-    "api_url": "https://api.github.com",
-    "default_branch": "dev",
-    "build_recipe": {
-      "build_command": "make -f Debug/makefile DEBUG=1 CDEFS_EXTRA='-DAPP_ROLE_MODE=APP_ROLE_MODE_RX -DAPP_DEBUG_ENABLE=1'",
-      "artifact_globs": [
-        "build/debug/High-Altitude-CC.elf"
+        "build/debug/High-Altitude-CC.elf",
+        "build/debug/High-Altitude-CC.hex",
+        "build/debug/High-Altitude-CC.bin",
+        "build/debug/High-Altitude-CC.map"
       ],
       "elf_glob": "build/debug/High-Altitude-CC.elf",
       "flash_image_glob": "build/debug/High-Altitude-CC.elf",

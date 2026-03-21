@@ -39,6 +39,13 @@ export RANGE_TEST_SERVER_URL="http://192.168.1.50:8000"
 range-test-agent run
 ```
 
+If the agent is running on the same machine as the server during development,
+use:
+
+```bash
+export RANGE_TEST_SERVER_URL="http://127.0.0.1:8000"
+```
+
 On Windows PowerShell:
 
 ```powershell
@@ -70,6 +77,20 @@ If the Windows agent shows `WinError 10061`, it usually means one of these:
 - the server machine firewall is blocking inbound TCP `8000`
 - the agent is using the wrong LAN IP for the server machine
 
+That first point only applies to a remote agent. For same-machine development,
+`http://127.0.0.1:8000` is valid.
+
+The bundled `High-Altitude-CC` example repo is built from the session page by:
+
+- choosing an exact git commit
+- loading the commit's `Core/Inc/app_config.h` defaults from GitHub
+- selecting TX or RX plus the exposed firmware config fields
+- queueing the server-owned build job on a build-capable agent
+
+The agent builds that repo through `make -f Debug/makefile DEBUG=1 all hex bin`
+with generated `CDEFS_EXTRA` overrides, uploads the bundle and build log, then
+deletes its local checkout and build files for that artifact.
+
 If the agent shows `SSL: WRONG_VERSION_NUMBER`, it is almost certainly using
 `https://<server-ip>:8000` against this plain HTTP server. Use `http://`, for example:
 
@@ -79,7 +100,8 @@ $env:RANGE_TEST_SERVER_URL = "http://192.168.1.50:8000"
 
 ## Prebuilt Artifact Upload
 
-If GitHub builds are not usable for a repo, you can upload an existing ELF as a
+If a repo cannot be built from a clean clone using the configured server recipe,
+you can upload an existing ELF as a
 session-scoped artifact:
 
 ```bash

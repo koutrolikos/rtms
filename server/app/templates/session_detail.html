@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ session.name }}{% endblock %}
 {% block content %}
+{% from "_summary.html" import render_summary %}
 <section class="hero">
   <div>
     <p class="eyebrow">Session</p>
@@ -8,7 +9,7 @@
     <p class="muted">{{ session.id }}</p>
   </div>
   <div class="hero-status">
-    <span class="chip chip-{{ session.status }}">{{ session.status }}</span>
+    <span class="chip chip-{{ session.status }}">{{ session.status | humanize_token }}</span>
     {% if report and report.html_storage_path %}
     <a class="button secondary" href="/sessions/{{ session.id }}/report">View Report</a>
     {% endif %}
@@ -68,40 +69,111 @@
 <section class="grid two">
   <article class="panel">
     <div class="panel-head">
-      <h3>Trigger GitHub Build</h3>
-      <p class="muted">Request a build by exact git SHA on a build-capable agent.</p>
+      <h3>Trigger Agent Build</h3>
+      <p class="muted">Select a commit, load its High-Altitude-CC defaults from <code>app_config.h</code>, adjust the session build config, and queue the build on a build-capable agent.</p>
     </div>
-    <form method="post" action="/sessions/{{ session.id }}/builds" class="stack">
+    <form method="post" action="/sessions/{{ session.id }}/builds" class="stack" id="session-build-form">
+      <input type="hidden" name="build_config_json" id="build-config-json" />
       <label>
         <span>Repo</span>
-        <select name="repo_id" required>
+        <select name="repo_id" id="build-repo-id" required>
           <option value="">Select repo</option>
           {% for repo in repos %}
-          <option value="{{ repo.id }}">{{ repo.display_name }}</option>
+          <option value="{{ repo.id }}" {% if repo.id == "high-altitude-cc" %}selected{% endif %}>{{ repo.display_name }}</option>
           {% endfor %}
         </select>
       </label>
-      <label><span>Exact Git SHA</span><input type="text" name="git_sha" required placeholder="40-char SHA or branch-qualified SHA" /></label>
+      <div class="stack build-browser">
+        <label>
+          <span>Commit Search</span>
+          <div class="inline-form">
+            <input type="text" id="commit-query" placeholder="Search by branch, tag, or SHA prefix" />
+            <button type="button" class="secondary" id="search-commits">Search Commits</button>
+          </div>
+        </label>
+        <div id="commit-results" class="build-commit-results"></div>
+      </div>
       <label>
-        <span>Build Host</span>
-        <select name="build_agent_id" required>
-          <option value="">Select agent</option>
-          {% for host in hosts %}
-          {% if host.capabilities_json.build_capable %}
-          <option value="{{ host.id }}">{{ host.label or host.name }}</option>
-          {% endif %}
+        <span>Exact Git SHA</span>
+        <div class="inline-form">
+          <input
+            type="text"
+            name="git_sha"
+            id="build-git-sha"
+            required
+            placeholder="40-char SHA or branch-qualified SHA"
+          />
+          <button type="button" class="secondary" id="load-build-config">Load Config</button>
+        </div>
+      </label>
+      <p class="muted" id="build-config-status">Load a commit to populate the build config from that revision before queuing a build.</p>
+      <div class="grid two">
+        <label>
+          <span>Role</span>
+          <select name="role" id="build-role" required>
+            <option value="TX">TX</option>
+            <option value="RX">RX</option>
+          </select>
+        </label>
+        <label>
+          <span>Build Host</span>
+          <select name="build_agent_id" required>
+            <option value="">Select agent</option>
+            {% for host in hosts %}
+            {% if host.capabilities_json.build_capable %}
+            <option value="{{ host.id }}">{{ host.label or host.name }}</option>
+            {% endif %}
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="grid two">
+        <label>
+          <span>APP_DEBUG_ENABLE</span>
+          <select id="build-app-debug-enable">
+            <option value="1">1</option>
+            <option value="0">0</option>
+          </select>
+        </label>
+        <label>
+          <span>APP_LOG_LEVEL</span>
+          <select id="build-app-log-level">
+            <option value="0">0 | Error</option>
+            <option value="1">1 | Warn</option>
+            <option value="2">2 | Info</option>
+            <option value="3">3 | Debug</option>
+            <option value="4">4 | Trace</option>
+          </select>
+        </label>
+      </div>
+      <section class="config-block">
+        <div class="panel-head">
+          <h4>Channel Selection</h4>
+          <p class="muted">Full High-Altitude-CC chsel surface for the selected commit.</p>
+        </div>
+        <div class="grid two">
+          <label><span>Allowlist Hz #1</span><input type="number" id="chsel-allowlist-0" min="1" step="1" /></label>
+          <label><span>Allowlist Hz #2</span><input type="number" id="chsel-allowlist-1" min="1" step="1" /></label>
+          <label><span>Band Min Hz</span><input type="number" id="chsel-band-min-hz" min="1" step="1" /></label>
+          <label><span>Band Max Hz</span><input type="number" id="chsel-band-max-hz" min="1" step="1" /></label>
+          <label><span>Our Half BW Hz</span><input type="number" id="chsel-our-half-bw-hz" min="0" step="1" /></label>
+          <label><span>Guard Band Hz</span><input type="number" id="chsel-guard-band-hz" min="0" step="1" /></label>
+          <label><span>Backup Failover Holdoff ms</span><input type="number" id="chsel-backup-holdoff-ms" min="0" step="1" /></label>
+        </div>
+        <div class="build-mask-grid">
+          {% for index in range(4) %}
+          <div class="grid two">
+            <label><span>Mask {{ index + 1 }} Center Hz</span><input type="number" id="chsel-mask-center-{{ index }}" min="0" step="1" /></label>
+            <label><span>Mask {{ index + 1 }} Half BW Hz</span><input type="number" id="chsel-mask-half-bw-{{ index }}" min="0" step="1" /></label>
+          </div>
           {% endfor %}
-        </select>
-      </label>
+        </div>
+      </section>
       <label>
-        <span>Auto-Assign Role</span>
-        <select name="role">
-          <option value="">No auto-assign</option>
-          <option value="TX">TX</option>
-          <option value="RX">RX</option>
-        </select>
+        <span>Build Summary</span>
+        <textarea id="build-config-summary" rows="5" readonly>Load a commit to inspect the resolved session build config.</textarea>
       </label>
-      <button type="submit">Queue Build</button>
+      <button type="submit" id="queue-build-button" disabled>Queue Build</button>
     </form>
   </article>
 
@@ -166,32 +238,34 @@
     <div class="panel-head">
       <h3>Role Runs</h3>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Role</th>
-          <th>Host</th>
-          <th>Status</th>
-          <th>Flash</th>
-          <th>Verify</th>
-          <th>Failure</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for role in roles %}
-        <tr>
-          <td>{{ role.role }}</td>
-          <td>{{ role.agent_id }}</td>
-          <td>{{ role.status }}</td>
-          <td>{{ role.flash_result or "-" }}</td>
-          <td>{{ role.verify_result or "-" }}</td>
-          <td>{{ role.failure_reason or "-" }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="6" class="muted">No role runs yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="table-shell">
+      <table>
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>Host</th>
+            <th>Status</th>
+            <th>Flash</th>
+            <th>Verify</th>
+            <th>Failure</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for role in roles %}
+          <tr>
+            <td>{{ role.role }}</td>
+            <td>{{ host_labels.get(role.agent_id, role.agent_id) }}</td>
+            <td>{{ role.status | humanize_token }}</td>
+            <td>{{ role.flash_result or "-" }}</td>
+            <td>{{ role.verify_result or "-" }}</td>
+            <td>{{ role.failure_reason or "-" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="muted">No role runs yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </article>
 
   <article class="panel">
@@ -217,59 +291,69 @@
   <article class="panel">
     <div class="panel-head">
       <h3>Artifacts</h3>
+      <p class="muted">Build artifacts preserve the requested build config and resolved build metadata.</p>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Status</th>
-          <th>Origin</th>
-          <th>SHA</th>
-          <th>Download</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for artifact in artifacts %}
-        <tr>
-          <td>{{ artifact.id[:8] }}</td>
-          <td>{{ artifact.status }}</td>
-          <td>{{ artifact.origin_type }}</td>
-          <td>{{ artifact.git_sha or "-" }}</td>
-          <td>{% if artifact.storage_path %}<a href="/api/artifacts/{{ artifact.id }}/download">bundle</a>{% else %}-{% endif %}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="5" class="muted">No artifacts yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="table-shell">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Status</th>
+            <th>Role</th>
+            <th>Origin</th>
+            <th>SHA</th>
+            <th>Metadata</th>
+            <th>Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for artifact in artifacts %}
+          <tr>
+            <td>{{ artifact.id | short_id }}</td>
+            <td>{{ artifact.status | humanize_token }}</td>
+            <td>{{ artifact.role_compatibility_json | join(", ") if artifact.role_compatibility_json else "-" }}</td>
+            <td>{{ artifact.origin_type | humanize_token }}</td>
+            <td>{{ artifact.git_sha | short_sha if artifact.git_sha else "-" }}</td>
+            <td>{{ render_summary(summarize_artifact_metadata(artifact.metadata_json)) }}</td>
+            <td>{% if artifact.storage_path %}<a href="/api/artifacts/{{ artifact.id }}/download">bundle</a>{% else %}-{% endif %}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="muted">No artifacts yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </article>
 
   <article class="panel">
     <div class="panel-head">
       <h3>Raw Artifacts</h3>
+      <p class="muted">Build logs, OpenOCD logs, RTT logs, and timing artifacts uploaded by agents.</p>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Role</th>
-          <th>Size</th>
-          <th>Download</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in raw_artifacts %}
-        <tr>
-          <td>{{ item.type }}</td>
-          <td>{{ item.role or "session" }}</td>
-          <td>{{ item.size_bytes }}</td>
-          <td><a href="/api/raw-artifacts/{{ item.id }}/download">download</a></td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4" class="muted">No raw artifacts uploaded yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="table-shell">
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Role</th>
+            <th>Size</th>
+            <th>Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in raw_artifacts %}
+          <tr>
+            <td>{{ item.type | humanize_token }}</td>
+            <td>{{ item.role or "session" }}</td>
+            <td>{{ item.size_bytes | human_bytes }}</td>
+            <td><a href="/api/raw-artifacts/{{ item.id }}/download">{{ item.storage_path | basename }}</a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="muted">No raw artifacts uploaded yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </article>
 </section>
 
@@ -277,28 +361,30 @@
   <div class="panel-head">
     <h3>Session Event Log</h3>
   </div>
-  <table>
-    <thead>
-      <tr>
-        <th>Timestamp</th>
-        <th>Source</th>
-        <th>Type</th>
-        <th>Payload</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for event in events %}
-      <tr>
-        <td>{{ event.corrected_timestamp or event.created_at }}</td>
-        <td>{{ event.source_type }}</td>
-        <td>{{ event.event_type }}</td>
-        <td><code>{{ event.payload_json }}</code></td>
-      </tr>
-      {% else %}
-      <tr><td colspan="4" class="muted">No session events yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-shell">
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Source</th>
+          <th>Type</th>
+          <th>Summary</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in events %}
+        <tr>
+          <td>{{ event.corrected_timestamp or event.created_at }}</td>
+          <td>{{ describe_source(event.source_type, event.source_ref, host_labels) }}</td>
+          <td>{{ event.event_type | humanize_token }}</td>
+          <td>{{ render_summary(summarize_event_payload(event.event_type, event.payload_json)) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">No session events yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section class="panel">
@@ -306,42 +392,272 @@
     <h3>Jobs</h3>
     <p class="muted">Build and execution job results with failure diagnostics.</p>
   </div>
-  <table>
-    <thead>
-      <tr>
-        <th>Created</th>
-        <th>Type</th>
-        <th>Agent</th>
-        <th>Role</th>
-        <th>Status</th>
-        <th>Failure</th>
-        <th>Diagnostics</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for job in jobs %}
-      <tr>
-        <td>{{ job.created_at }}</td>
-        <td>{{ job.type }}</td>
-        <td>{{ job.agent_id }}</td>
-        <td>{{ job.role or "-" }}</td>
-        <td>{{ job.status }}</td>
-        <td>{{ job.failure_reason or "-" }}</td>
-        <td>
-          {% if job.diagnostics_json %}
-          <details>
-            <summary>show</summary>
-            <pre>{{ job.diagnostics_json }}</pre>
-          </details>
-          {% else %}
-          -
-          {% endif %}
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="7" class="muted">No jobs yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-shell">
+    <table>
+      <thead>
+        <tr>
+          <th>Created</th>
+          <th>Type</th>
+          <th>Agent</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Failure</th>
+          <th>Diagnostics</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td>{{ job.created_at }}</td>
+          <td>{{ job.type | humanize_token }}</td>
+          <td>{{ host_labels.get(job.agent_id, job.agent_id) }}</td>
+          <td>{{ job.role or "-" }}</td>
+          <td>{{ job.status | humanize_token }}</td>
+          <td>{{ job.failure_reason or "-" }}</td>
+          <td>{{ render_summary(summarize_job_diagnostics(job.type, job.diagnostics_json)) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="muted">No jobs yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
+<script>
+(() => {
+  const form = document.getElementById("session-build-form");
+  if (!form) {
+    return;
+  }
+
+  const repoSelect = document.getElementById("build-repo-id");
+  const commitQuery = document.getElementById("commit-query");
+  const commitResults = document.getElementById("commit-results");
+  const gitShaInput = document.getElementById("build-git-sha");
+  const loadConfigButton = document.getElementById("load-build-config");
+  const searchCommitsButton = document.getElementById("search-commits");
+  const queueBuildButton = document.getElementById("queue-build-button");
+  const statusText = document.getElementById("build-config-status");
+  const summaryField = document.getElementById("build-config-summary");
+  const buildConfigJson = document.getElementById("build-config-json");
+  const appDebugEnable = document.getElementById("build-app-debug-enable");
+  const appLogLevel = document.getElementById("build-app-log-level");
+  const allowlistInputs = [
+    document.getElementById("chsel-allowlist-0"),
+    document.getElementById("chsel-allowlist-1"),
+  ];
+  const bandMinHz = document.getElementById("chsel-band-min-hz");
+  const bandMaxHz = document.getElementById("chsel-band-max-hz");
+  const ourHalfBwHz = document.getElementById("chsel-our-half-bw-hz");
+  const guardBandHz = document.getElementById("chsel-guard-band-hz");
+  const backupHoldoffMs = document.getElementById("chsel-backup-holdoff-ms");
+  const exclusionMaskInputs = Array.from({ length: 4 }, (_, index) => ({
+    center: document.getElementById(`chsel-mask-center-${index}`),
+    halfBw: document.getElementById(`chsel-mask-half-bw-${index}`),
+  }));
+
+  let loadedConfigSha = "";
+
+  const setStatus = (message, isError = false) => {
+    statusText.textContent = message;
+    statusText.classList.toggle("danger-text", isError);
+  };
+
+  const fetchJson = async (url) => {
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.detail || `Request failed with status ${response.status}`);
+    }
+    return payload;
+  };
+
+  const renderSummary = (buildConfig, sha) => {
+    summaryField.value = [
+      `git_sha: ${sha}`,
+      `app_debug_enable: ${buildConfig.app_debug_enable}`,
+      `app_log_level: ${buildConfig.app_log_level}`,
+      `chsel.allowlist_hz: ${buildConfig.chsel.allowlist_hz.join(", ")}`,
+      `chsel.band_min_hz: ${buildConfig.chsel.band_min_hz}`,
+      `chsel.band_max_hz: ${buildConfig.chsel.band_max_hz}`,
+      `chsel.our_half_bw_hz: ${buildConfig.chsel.our_half_bw_hz}`,
+      `chsel.guard_band_hz: ${buildConfig.chsel.guard_band_hz}`,
+      `chsel.backup_failover_holdoff_ms: ${buildConfig.chsel.backup_failover_holdoff_ms}`,
+      `chsel.exclusion_masks: ${
+        buildConfig.chsel.exclusion_masks.length
+          ? buildConfig.chsel.exclusion_masks
+              .map((mask, index) => `#${index + 1}(${mask.center_hz}, ${mask.half_bw_hz})`)
+              .join(", ")
+          : "none"
+      }`,
+    ].join("\n");
+  };
+
+  const populateLogLevelOptions = (constraints, selectedValue) => {
+    appLogLevel.innerHTML = "";
+    for (const option of constraints.app_log_level_options) {
+      const element = document.createElement("option");
+      element.value = String(option.value);
+      element.textContent = `${option.value} | ${option.label}`;
+      if (option.value === selectedValue) {
+        element.selected = true;
+      }
+      appLogLevel.appendChild(element);
+    }
+  };
+
+  const populateConfigForm = (payload) => {
+    appDebugEnable.value = String(payload.build_config.app_debug_enable);
+    populateLogLevelOptions(payload.constraints, payload.build_config.app_log_level);
+    allowlistInputs.forEach((input, index) => {
+      input.value = payload.build_config.chsel.allowlist_hz[index] || "";
+    });
+    bandMinHz.value = payload.build_config.chsel.band_min_hz;
+    bandMaxHz.value = payload.build_config.chsel.band_max_hz;
+    ourHalfBwHz.value = payload.build_config.chsel.our_half_bw_hz;
+    guardBandHz.value = payload.build_config.chsel.guard_band_hz;
+    backupHoldoffMs.value = payload.build_config.chsel.backup_failover_holdoff_ms;
+    exclusionMaskInputs.forEach((maskInputs, index) => {
+      const mask = payload.build_config.chsel.exclusion_masks[index];
+      maskInputs.center.value = mask ? mask.center_hz : "";
+      maskInputs.halfBw.value = mask ? mask.half_bw_hz : "";
+    });
+    renderSummary(payload.build_config, payload.git_sha);
+  };
+
+  const renderCommitResults = (commits) => {
+    commitResults.innerHTML = "";
+    if (!commits.length) {
+      commitResults.innerHTML = '<p class="muted">No commits returned for this query.</p>';
+      return;
+    }
+    for (const commit of commits) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "commit-choice";
+      button.innerHTML = `
+        <strong>${commit.short_sha}</strong>
+        <span>${commit.message}</span>
+        <small>${commit.author_name || "unknown author"} | ${commit.author_date || "-"}</small>
+      `;
+      button.addEventListener("click", async () => {
+        gitShaInput.value = commit.sha;
+        commitQuery.value = commit.short_sha;
+        await loadBuildConfig();
+      });
+      commitResults.appendChild(button);
+    }
+  };
+
+  const searchCommits = async () => {
+    if (!repoSelect.value) {
+      setStatus("Select a repo before searching for commits.", true);
+      return;
+    }
+    setStatus("Loading commits...");
+    commitResults.innerHTML = "";
+    try {
+      const query = commitQuery.value.trim();
+      const suffix = query ? `?q=${encodeURIComponent(query)}` : "";
+      const commits = await fetchJson(`/api/repos/${encodeURIComponent(repoSelect.value)}/commits${suffix}`);
+      renderCommitResults(commits);
+      setStatus("Select a commit result or enter an exact SHA manually.");
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  };
+
+  const loadBuildConfig = async () => {
+    if (!repoSelect.value || !gitShaInput.value.trim()) {
+      setStatus("Choose a repo and enter an exact git SHA before loading config.", true);
+      return;
+    }
+    queueBuildButton.disabled = true;
+    setStatus("Loading build config from the selected commit...");
+    try {
+      const payload = await fetchJson(
+        `/api/repos/${encodeURIComponent(repoSelect.value)}/build-config?git_sha=${encodeURIComponent(gitShaInput.value.trim())}`
+      );
+      gitShaInput.value = payload.git_sha;
+      loadedConfigSha = payload.git_sha;
+      populateConfigForm(payload);
+      queueBuildButton.disabled = false;
+      setStatus(`Loaded build config defaults from ${payload.git_sha}.`);
+    } catch (error) {
+      loadedConfigSha = "";
+      setStatus(error.message, true);
+    }
+  };
+
+  const serializeBuildConfig = () => {
+    const allowlistHz = allowlistInputs
+      .map((input) => input.value.trim())
+      .filter(Boolean)
+      .map((value) => Number(value));
+    if (!allowlistHz.length) {
+      throw new Error("At least one allowlist frequency is required.");
+    }
+
+    const exclusionMasks = [];
+    exclusionMaskInputs.forEach((maskInputs, index) => {
+      const centerValue = maskInputs.center.value.trim();
+      const halfBwValue = maskInputs.halfBw.value.trim();
+      if (!centerValue && !halfBwValue) {
+        return;
+      }
+      if (!centerValue || !halfBwValue) {
+        throw new Error(`Exclusion mask ${index + 1} requires both center and half bandwidth values.`);
+      }
+      exclusionMasks.push({
+        center_hz: Number(centerValue),
+        half_bw_hz: Number(halfBwValue),
+      });
+    });
+
+    return {
+      app_debug_enable: Number(appDebugEnable.value),
+      app_log_level: Number(appLogLevel.value),
+      chsel: {
+        allowlist_hz: allowlistHz,
+        band_min_hz: Number(bandMinHz.value),
+        band_max_hz: Number(bandMaxHz.value),
+        our_half_bw_hz: Number(ourHalfBwHz.value),
+        guard_band_hz: Number(guardBandHz.value),
+        exclusion_masks: exclusionMasks,
+        backup_failover_holdoff_ms: Number(backupHoldoffMs.value),
+      },
+    };
+  };
+
+  form.addEventListener("submit", (event) => {
+    try {
+      if (loadedConfigSha !== gitShaInput.value.trim()) {
+        throw new Error("Load build config for the selected SHA before queuing the build.");
+      }
+      const payload = serializeBuildConfig();
+      buildConfigJson.value = JSON.stringify(payload);
+      renderSummary(payload, gitShaInput.value.trim());
+    } catch (error) {
+      event.preventDefault();
+      setStatus(error.message, true);
+    }
+  });
+
+  repoSelect.addEventListener("change", () => {
+    loadedConfigSha = "";
+    queueBuildButton.disabled = true;
+    commitResults.innerHTML = "";
+    setStatus("Load a commit to populate the build config from that revision before queuing a build.");
+  });
+
+  gitShaInput.addEventListener("input", () => {
+    if (gitShaInput.value.trim() !== loadedConfigSha) {
+      queueBuildButton.disabled = true;
+    }
+  });
+
+  searchCommitsButton.addEventListener("click", searchCommits);
+  loadConfigButton.addEventListener("click", loadBuildConfig);
+})();
+</script>
 {% endblock %}

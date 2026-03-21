@@ -50,7 +50,58 @@ class ConfiguredRepo(BaseModel):
     clone_url: str
     api_url: str = "https://api.github.com"
     default_branch: str = "main"
+    local_checkout_path: str | None = None
     build_recipe: BuildRecipe
+
+
+class HighAltitudeCCExclusionMask(BaseModel):
+    center_hz: int = Field(ge=0)
+    half_bw_hz: int = Field(ge=0)
+
+
+class HighAltitudeCCChannelSelectionConfig(BaseModel):
+    allowlist_hz: list[int] = Field(min_length=1, max_length=2)
+    band_min_hz: int
+    band_max_hz: int
+    our_half_bw_hz: int
+    guard_band_hz: int
+    exclusion_masks: list[HighAltitudeCCExclusionMask] = Field(default_factory=list, max_length=4)
+    backup_failover_holdoff_ms: int
+
+
+class HighAltitudeCCBuildConfig(BaseModel):
+    app_debug_enable: int = Field(ge=0, le=1)
+    app_log_level: int = Field(ge=0, le=4)
+    chsel: HighAltitudeCCChannelSelectionConfig
+
+
+class IntegerChoice(BaseModel):
+    value: int
+    label: str
+
+
+class HighAltitudeCCBuildConfigConstraints(BaseModel):
+    app_debug_enable_values: list[int] = Field(default_factory=lambda: [0, 1])
+    app_log_level_options: list[IntegerChoice] = Field(
+        default_factory=lambda: [
+            IntegerChoice(value=0, label="Error"),
+            IntegerChoice(value=1, label="Warn"),
+            IntegerChoice(value=2, label="Info"),
+            IntegerChoice(value=3, label="Debug"),
+            IntegerChoice(value=4, label="Trace"),
+        ]
+    )
+    allowlist_count_min: int = 1
+    allowlist_count_max: int = 2
+    exclusion_mask_count_min: int = 0
+    exclusion_mask_count_max: int = 4
+
+
+class RepoBuildConfigResponse(BaseModel):
+    repo_id: str
+    git_sha: str
+    build_config: HighAltitudeCCBuildConfig
+    constraints: HighAltitudeCCBuildConfigConstraints
 
 
 class AgentRegistrationRequest(BaseModel):
@@ -111,6 +162,7 @@ class BuildArtifactPayload(BaseModel):
     role_hint: Role | None = None
     repo: ConfiguredRepo
     git_sha: str
+    build_config: HighAltitudeCCBuildConfig | None = None
 
 
 class PrepareRolePayload(BaseModel):
@@ -184,10 +236,11 @@ class AssignArtifactRequest(BaseModel):
 
 class BuildRequest(BaseModel):
     session_id: str
-    role: Role | None = None
+    role: Role
     repo_id: str
     git_sha: str
     build_agent_id: str
+    build_config: HighAltitudeCCBuildConfig | None = None
 
 
 class AnnotationCreateRequest(BaseModel):

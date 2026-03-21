@@ -24,6 +24,7 @@ body {
   background:
     radial-gradient(circle at top left, rgba(11, 107, 122, 0.12), transparent 22rem),
     linear-gradient(180deg, #f5f8f4 0%, var(--bg) 100%);
+  overflow-x: hidden;
 }
 
 a {
@@ -70,6 +71,7 @@ pre {
   border: 1px solid rgba(11, 107, 122, 0.11);
   border-radius: 20px;
   box-shadow: var(--shadow);
+  min-width: 0;
 }
 
 .hero {
@@ -78,12 +80,14 @@ pre {
   gap: 1rem;
   align-items: start;
   padding: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .hero-status {
   display: flex;
   gap: 0.75rem;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .panel {
@@ -96,6 +100,7 @@ pre {
   gap: 1rem;
   align-items: start;
   margin-bottom: 1rem;
+  flex-wrap: wrap;
 }
 
 .panel-head h2,
@@ -115,10 +120,18 @@ pre {
   color: var(--muted);
 }
 
+.danger-text {
+  color: var(--danger);
+}
+
 .grid.two {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1.25rem;
+}
+
+.grid.two > * {
+  min-width: 0;
 }
 
 .card-grid {
@@ -132,6 +145,37 @@ pre {
   border-radius: 16px;
   padding: 1rem;
   background: linear-gradient(180deg, rgba(255,255,255,0.88), rgba(239,247,245,0.9));
+  min-width: 0;
+}
+
+.config-block {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 1rem;
+  background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(243,248,246,0.95));
+  min-width: 0;
+}
+
+.build-commit-results,
+.build-mask-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.commit-choice {
+  width: 100%;
+  justify-content: start;
+  align-items: start;
+  text-align: left;
+  flex-direction: column;
+  gap: 0.2rem;
+  border-radius: 16px;
+  background: #dfece8;
+  color: var(--ink);
+}
+
+.commit-choice small {
+  color: var(--muted);
 }
 
 .card-title-row {
@@ -139,6 +183,7 @@ pre {
   justify-content: space-between;
   gap: 0.5rem;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .stack {
@@ -205,9 +250,15 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.table-shell {
+  width: 100%;
+  overflow-x: auto;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 100%;
 }
 
 th,
@@ -216,6 +267,8 @@ td {
   padding: 0.72rem 0.5rem;
   border-bottom: 1px solid var(--line);
   vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 th {
@@ -236,6 +289,7 @@ th {
   padding: 0.75rem;
   border: 1px solid var(--line);
   border-radius: 14px;
+  min-width: 0;
 }
 
 .meta dt {
@@ -246,6 +300,7 @@ th {
 .meta dd {
   margin: 0.35rem 0 0;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .chip {
@@ -287,6 +342,52 @@ th {
   color: var(--offline);
 }
 
+.summary-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.summary-list div {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid rgba(11, 107, 122, 0.12);
+  border-radius: 12px;
+  background: rgba(239, 247, 245, 0.9);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.58rem;
+  border-radius: 999px;
+  background: rgba(11, 107, 122, 0.1);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.mono-wrap {
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.92rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+code {
+  background: rgba(11, 107, 122, 0.08);
+  border-radius: 8px;
+  padding: 0.08rem 0.3rem;
+  overflow-wrap: anywhere;
+}
+
 .timeline {
   list-style: none;
   padding: 0;
@@ -300,6 +401,7 @@ th {
   gap: 0.2rem;
   padding-bottom: 0.85rem;
   border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
 }
 
 .narrow {
@@ -313,6 +415,7 @@ th {
 pre {
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
   background: #f6faf8;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -328,6 +431,10 @@ pre {
   }
 
   .page {
+    padding: 1rem;
+  }
+
+  .panel {
     padding: 1rem;
   }
 }

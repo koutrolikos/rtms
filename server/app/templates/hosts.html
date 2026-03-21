@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Hosts{% endblock %}
 {% block content %}
+{% from "_summary.html" import render_tags %}
 <section class="panel">
   <div class="panel-head">
     <h2>Agents</h2>
@@ -28,7 +29,9 @@
         <div><dt>Hostname</dt><dd>{{ host.hostname }}</dd></div>
         <div><dt>IP</dt><dd>{{ host.ip_address or "n/a" }}</dd></div>
         <div><dt>Probes</dt><dd>{{ host.connected_probe_count }}</dd></div>
-        <div><dt>Capabilities</dt><dd>{{ host.capabilities_json }}</dd></div>
+        <div><dt>Capabilities</dt><dd>{{ render_tags(summarize_capabilities(host.capabilities_json), "No capabilities") }}</dd></div>
+        <div><dt>Version</dt><dd>{{ host.software_version }}</dd></div>
+        <div><dt>Location</dt><dd>{{ host.last_reported_location or "n/a" }}</dd></div>
         <div><dt>Last Seen</dt><dd>{{ host.last_seen_at }}</dd></div>
       </dl>
     </article>
@@ -42,27 +45,29 @@
   <div class="panel-head">
     <h2>Recent Sessions</h2>
   </div>
-  <table>
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Status</th>
-        <th>Created</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for session in sessions %}
-      <tr>
-        <td><a href="/sessions/{{ session.id }}">{{ session.name }}</a></td>
-        <td>{{ session.status }}</td>
-        <td>{{ session.created_at }}</td>
-      </tr>
-      {% else %}
-      <tr>
-        <td colspan="3" class="muted">No sessions created yet.</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-shell">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Status</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for session in sessions %}
+        <tr>
+          <td><a href="/sessions/{{ session.id }}">{{ session.name }}</a></td>
+          <td>{{ session.status | humanize_token }}</td>
+          <td>{{ session.created_at }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="3" class="muted">No sessions created yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}

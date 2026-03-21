@@ -35,11 +35,12 @@ def validate_server_url(server_url: str) -> None:
         raise ServerConnectionError(
             f"Invalid RANGE_TEST_SERVER_URL: {server_url!r}. Expected format like http://192.168.1.50:8000"
         )
-    if host in {"127.0.0.1", "localhost", "0.0.0.0"}:
+    if host == "0.0.0.0":
         raise ServerConnectionError(
-            "RANGE_TEST_SERVER_URL points at a local-only address "
-            f"({server_url}). A remote agent must use the server machine's LAN/VPS IP, "
-            "for example http://192.168.1.50:8000"
+            "RANGE_TEST_SERVER_URL points at the server listen address "
+            f"({server_url}), which is not a routable destination. Use either "
+            "http://127.0.0.1:8000 for same-machine development or the server machine's "
+            "LAN/VPS IP for remote agents, for example http://192.168.1.50:8000"
         )
 
 
@@ -49,6 +50,22 @@ def describe_connect_error(server_url: str, exc: Exception) -> ServerConnectionE
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     error_text = str(exc)
     upper_error = error_text.upper()
+    if isinstance(exc, httpx.TimeoutException) or "TIMED OUT" in upper_error:
+        if host in {"127.0.0.1", "localhost"}:
+            return ServerConnectionError(
+                "Timed out while connecting to the control server at "
+                f"{server_url}. The agent and server appear to be using a same-machine URL, "
+                "so check that the server process is still running and listening on that port. "
+                f"Original error: {exc}"
+            )
+        return ServerConnectionError(
+            "Timed out while connecting to the control server at "
+            f"{server_url}. Check that the server is running, that {host}:{port} is reachable "
+            "from the agent machine, and that any firewall allows inbound TCP on that port. "
+            "If the agent is running on the same machine as the server, prefer "
+            "http://127.0.0.1:8000 instead of the machine's LAN IP. "
+            f"Original error: {exc}"
+        )
     if "WRONG_VERSION_NUMBER" in upper_error or (
         parsed.scheme == "https" and "SSL" in upper_error
     ):
@@ -62,8 +79,9 @@ def describe_connect_error(server_url: str, exc: Exception) -> ServerConnectionE
     return ServerConnectionError(
         "Could not connect to the control server at "
         f"{server_url}. The TCP connection to {host}:{port} was refused. "
-        "Check that the server is running, that it is reachable on the LAN IP rather than localhost, "
-        f"and that inbound TCP {port} is allowed through the server machine's firewall. "
+        "Check that the server is running and that inbound TCP "
+        f"{port} is allowed through the server machine's firewall. If the agent is on the same "
+        "machine as the server, prefer http://127.0.0.1:8000. "
         f"Original error: {exc}"
     )
 
@@ -83,7 +101,7 @@ class ServerClient:
                 f"{self.server_url}/api/agent/register",
                 json=request.model_dump(mode="json"),
             )
-        except httpx.ConnectError as exc:
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
             raise describe_connect_error(self.server_url, exc) from exc
         response.raise_for_status()
         return AgentRegistrationResponse.model_validate(response.json())
@@ -94,7 +112,7 @@ class ServerClient:
                 f"{self.server_url}/api/agent/heartbeat",
                 json=request.model_dump(mode="json"),
             )
-        except httpx.ConnectError as exc:
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
             raise describe_connect_error(self.server_url, exc) from exc
         response.raise_for_status()
         return AgentHeartbeatResponse.model_validate(response.json())
@@ -103,7 +121,7 @@ class ServerClient:
         send_at = datetime.now().astimezone()
         try:
             response = self.client.get(f"{self.server_url}/api/agent/time-sync")
-        except httpx.ConnectError as exc:
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
             raise describe_connect_error(self.server_url, exc) from exc
         recv_at = datetime.now().astimezone()
         response.raise_for_status()
@@ -117,7 +135,7 @@ class ServerClient:
                 f"{self.server_url}/api/agent/poll",
                 json=request.model_dump(mode="json"),
             )
-        except httpx.ConnectError as exc:
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
             raise describe_connect_error(self.server_url, exc) from exc
         response.raise_for_status()
         return AgentPollResponse.model_validate(response.json())
@@ -158,7 +176,7 @@ class ServerClient:
                     files=files,
                     data=data,
                 )
-            except httpx.ConnectError as exc:
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
                 raise describe_connect_error(self.server_url, exc) from exc
         response.raise_for_status()
         return ArtifactUploadResult.model_validate(response.json())
@@ -186,7 +204,7 @@ class ServerClient:
                     files=files,
                     data=data,
                 )
-            except httpx.ConnectError as exc:
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
                 raise describe_connect_error(self.server_url, exc) from exc
         response.raise_for_status()
         return RawArtifactUploadResult.model_validate(response.json())
@@ -199,14 +217,14 @@ class ServerClient:
                 with destination.open("wb") as handle:
                     for chunk in response.iter_bytes():
                         handle.write(chunk)
-        except httpx.ConnectError as exc:
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
             raise describe_connect_error(artifact_download_url, exc) from exc
         return destination
 
     def list_repos(self) -> list[ConfiguredRepo]:
         try:
             response = self.client.get(f"{self.server_url}/api/repos")
-        except httpx.ConnectError as exc:
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
             raise describe_connect_error(self.server_url, exc) from exc
         response.raise_for_status()
         return [ConfiguredRepo.model_validate(item) for item in response.json()]
