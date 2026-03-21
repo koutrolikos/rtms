@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+import zipfile
+
 import httpx
 from fastapi.testclient import TestClient
 
@@ -11,7 +14,8 @@ from agent.app.services.api_client import (
 from server.app.core.config import ServerSettings
 from server.app.db.session import get_db
 from server.app.main import create_app
-from server.app.models.entities import Artifact, Job, RawArtifact
+from server.app.models.entities import AgentHost, Artifact, Job, RawArtifact
+from server.app.services.storage import FileStorage
 from shared.schemas import BuildRecipe, ConfiguredRepo
 
 
@@ -63,15 +67,15 @@ def _high_altitude_cc_repo() -> ConfiguredRepo:
         clone_url="https://github.com/koutrolikos/High-Altitude-CC.git",
         default_branch="dev",
         build_recipe=BuildRecipe(
-            build_command="make -f Debug/makefile DEBUG=1 all hex bin",
+            build_command="range-test-agent build-high-altitude-cc --source . --build-dir build/debug",
             artifact_globs=[
-                "build/debug/High-Altitude-CC.elf",
-                "build/debug/High-Altitude-CC.hex",
-                "build/debug/High-Altitude-CC.bin",
-                "build/debug/High-Altitude-CC.map",
+                "build/debug/HighAltitudeCC.elf",
+                "build/debug/HighAltitudeCC.hex",
+                "build/debug/HighAltitudeCC.bin",
+                "build/debug/HighAltitudeCC.map",
             ],
-            elf_glob="build/debug/High-Altitude-CC.elf",
-            flash_image_glob="build/debug/High-Altitude-CC.elf",
+            elf_glob="build/debug/HighAltitudeCC.elf",
+            flash_image_glob="build/debug/HighAltitudeCC.elf",
             timeout_seconds=1200,
             env={},
             rtt_symbol="_SEGGER_RTT",
@@ -95,6 +99,54 @@ class FakeGitHubService:
         assert path == "Core/Inc/app_config.h"
         assert ref
         return APP_CONFIG_SAMPLE
+
+
+class EmptyGitHubService:
+    def list_repos(self) -> list[ConfiguredRepo]:
+        return []
+
+    def get_repo(self, repo_id: str) -> ConfiguredRepo:
+        raise KeyError(f"unknown repo_id {repo_id}")
+
+
+def _client_with_db(db_session) -> TestClient:
+    app = create_app()
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    return TestClient(app)
+
+
+def _client_with_db_and_settings(db_session, monkeypatch, settings: ServerSettings) -> TestClient:
+    monkeypatch.setattr("server.app.main.get_settings", lambda: settings)
+    monkeypatch.setattr("server.app.api.agent.get_settings", lambda: settings)
+    monkeypatch.setattr("server.app.api.operator.get_settings", lambda: settings)
+    app = create_app()
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    return TestClient(app)
+
+
+def _bundle_bytes(*, session_id: str, artifact_id: str | None = None) -> bytes:
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "manifest.json",
+            (
+                "{"
+                f'"origin_type":"manual_upload",'
+                f'"created_at":"2026-03-21T12:00:00+00:00",'
+                f'"session_id":"{session_id}"'
+                + (f',"artifact_id":"{artifact_id}"' if artifact_id else "")
+                + "}"
+            ),
+        )
+    return payload.getvalue()
 
 
 def test_create_session_api(db_session) -> None:
@@ -402,12 +454,258 @@ def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
     assert "Config Debug 0" in response.text
     assert "requested_build_config" not in response.text
     assert "build log" in response.text
+    assert "Existing Artifacts" not in response.text
+    assert "Assign TX" not in response.text
+    assert "Assign RX" not in response.text
+    assert "Select TX-compatible artifact" not in response.text
+    assert "Select RX-compatible artifact" not in response.text
+    assert "Target Slot" in response.text
+    assert "Use Existing Artifact" not in response.text
+    assert "Build outputs auto-assign to the selected slot when ready." in response.text
     assert 'data-copy-label="session id"' in response.text
     assert 'data-copy-label="artifact id"' in response.text
     assert 'data-copy-label="git sha"' in response.text
     assert 'data-enter-click="search-commits"' in response.text
     assert 'data-enter-click="load-build-config"' in response.text
+    assert f'data-auto-refresh-url="/sessions/{session_id}/live"' in response.text
+    assert 'data-active-stage-id="stage-configure"' in response.text
+    assert f'data-active-stage-storage-key="session-active-stage:{session_id}"' in response.text
+    assert f'data-stage-storage-key="session-stage:{session_id}"' in response.text
     assert f"/api/raw-artifacts/{raw_artifact.id}/download" in response.text
+
+
+def test_session_detail_page_hides_existing_artifact_assignment_when_no_ready_artifacts(
+    db_session, monkeypatch
+) -> None:
+    monkeypatch.setattr("server.app.api.operator._github", lambda: FakeGitHubService())
+    client = _client_with_db(db_session)
+
+    session_response = client.post(
+        "/api/sessions",
+        json={
+            "name": "empty-artifacts-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "yard",
+        },
+    )
+    session_id = session_response.json()["id"]
+
+    response = client.get(f"/sessions/{session_id}")
+
+    assert response.status_code == 200
+    assert "Existing Artifacts" not in response.text
+    assert "Use Existing Artifact" not in response.text
+    assert "Select TX-compatible artifact" not in response.text
+    assert "Select RX-compatible artifact" not in response.text
+    assert "Target Slot" in response.text
+    assert "Build outputs auto-assign to the selected slot when ready." in response.text
+
+
+def test_session_detail_page_marks_run_stage_active_once_setup_and_artifacts_are_ready(
+    db_session, monkeypatch
+) -> None:
+    monkeypatch.setattr("server.app.api.operator._github", lambda: EmptyGitHubService())
+    client = _client_with_db(db_session)
+
+    session_response = client.post(
+        "/api/sessions",
+        json={
+            "name": "progression-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "yard",
+        },
+    )
+    session_id = session_response.json()["id"]
+
+    tx_host = AgentHost(name="tx-agent", label="TX Agent", hostname="tx.local", status="idle")
+    rx_host = AgentHost(name="rx-agent", label="RX Agent", hostname="rx.local", status="idle")
+    tx_artifact = Artifact(
+        session_id=session_id,
+        status="ready",
+        origin_type="manual_upload",
+        role_compatibility_json=["TX"],
+        storage_path="artifacts/session-id/tx/bundle.zip",
+    )
+    rx_artifact = Artifact(
+        session_id=session_id,
+        status="ready",
+        origin_type="manual_upload",
+        role_compatibility_json=["RX"],
+        storage_path="artifacts/session-id/rx/bundle.zip",
+    )
+    db_session.add_all([tx_host, rx_host, tx_artifact, rx_artifact])
+    db_session.commit()
+
+    response = client.post(
+        f"/api/sessions/{session_id}/hosts",
+        json={"tx_agent_id": tx_host.id, "rx_agent_id": rx_host.id},
+    )
+    assert response.status_code == 200
+
+    response = client.post(
+        f"/api/sessions/{session_id}/artifacts/assign",
+        json={"role": "TX", "artifact_id": tx_artifact.id},
+    )
+    assert response.status_code == 200
+
+    response = client.post(
+        f"/api/sessions/{session_id}/artifacts/assign",
+        json={"role": "RX", "artifact_id": rx_artifact.id},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "awaiting_hosts"
+
+    page = client.get(f"/sessions/{session_id}")
+
+    assert page.status_code == 200
+    assert 'data-active-stage-id="stage-run"' in page.text
+    assert f'data-active-stage-storage-key="session-active-stage:{session_id}"' in page.text
+
+
+def test_session_live_endpoint_version_changes_when_session_data_changes(db_session) -> None:
+    app = create_app()
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+
+    session_response = client.post(
+        "/api/sessions",
+        json={
+            "name": "live-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    )
+    session_id = session_response.json()["id"]
+
+    initial_response = client.get(f"/sessions/{session_id}/live")
+    assert initial_response.status_code == 200
+    initial_version = initial_response.json()["version"]
+
+    annotation_response = client.post(
+        f"/api/sessions/{session_id}/annotations",
+        json={"text": "backend event"},
+    )
+    assert annotation_response.status_code == 200
+
+    updated_response = client.get(f"/sessions/{session_id}/live")
+    assert updated_response.status_code == 200
+    assert updated_response.json()["version"] != initial_version
+
+
+def test_session_live_endpoint_version_changes_when_build_job_finishes(db_session, monkeypatch) -> None:
+    app = create_app()
+
+    def override_get_db():
+        yield db_session
+
+    monkeypatch.setattr("server.app.api.operator._github", lambda: FakeGitHubService())
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+
+    session_response = client.post(
+        "/api/sessions",
+        json={
+            "name": "live-build-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    )
+    session_id = session_response.json()["id"]
+
+    build_response = client.post(
+        f"/api/sessions/{session_id}/builds",
+        json={
+            "session_id": session_id,
+            "role": "TX",
+            "repo_id": "high-altitude-cc",
+            "git_sha": "deadbeefcafebabe",
+            "build_agent_id": "agent-build",
+            "build_config": {
+                "app_debug_enable": 0,
+                "app_log_level": 2,
+                "chsel": {
+                    "allowlist_hz": [433200000, 434600000],
+                    "band_min_hz": 433050000,
+                    "band_max_hz": 434790000,
+                    "our_half_bw_hz": 108500,
+                    "guard_band_hz": 30000,
+                    "exclusion_masks": [
+                        {"center_hz": 433920000, "half_bw_hz": 25000},
+                    ],
+                    "backup_failover_holdoff_ms": 15000,
+                },
+            },
+        },
+    )
+    assert build_response.status_code == 200
+    job_id = build_response.json()["job_id"]
+
+    pending_live_response = client.get(f"/sessions/{session_id}/live")
+    assert pending_live_response.status_code == 200
+    pending_version = pending_live_response.json()["version"]
+
+    result_response = client.post(
+        f"/api/agent/jobs/{job_id}/result",
+        json={
+            "success": False,
+            "failure_reason": "build_failed",
+            "diagnostics": {"stage": "build"},
+        },
+    )
+    assert result_response.status_code == 200
+
+    completed_live_response = client.get(f"/sessions/{session_id}/live")
+    assert completed_live_response.status_code == 200
+    assert completed_live_response.json()["version"] != pending_version
+
+
+def test_hosts_page_and_live_endpoint_refresh_when_hosts_change(db_session) -> None:
+    app = create_app()
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+
+    initial_live_response = client.get("/hosts/live")
+    assert initial_live_response.status_code == 200
+    initial_version = initial_live_response.json()["version"]
+
+    register_response = client.post(
+        "/api/agent/register",
+        json={
+            "name": "agent-live",
+            "label": "Field Agent",
+            "hostname": "field-host",
+            "capabilities": {
+                "build_capable": True,
+                "flash_capable": True,
+                "capture_capable": True,
+            },
+            "ip_address": "127.0.0.1",
+            "connected_probe_count": 1,
+            "location_text": "track",
+            "software_version": "0.1.0",
+        },
+    )
+    assert register_response.status_code == 200
+
+    updated_live_response = client.get("/hosts/live")
+    assert updated_live_response.status_code == 200
+    assert updated_live_response.json()["version"] != initial_version
+
+    hosts_page = client.get("/hosts")
+    assert hosts_page.status_code == 200
+    assert 'data-auto-refresh-url="/hosts/live"' in hosts_page.text
 
 
 def test_report_page_renders_summaries_without_raw_payload_dumps(db_session) -> None:
@@ -446,3 +744,209 @@ def test_report_page_renders_summaries_without_raw_payload_dumps(db_session) -> 
     assert "Vehicle entered tree line" in report_page.text
     assert "payload_json" not in report_page.text
     assert 'data-copy-label="session id"' in report_page.text
+
+
+def test_storage_rejects_escape_paths(tmp_path) -> None:
+    storage = FileStorage(tmp_path / "server_data")
+    try:
+        storage.save_bytes(b"escape", "../escape.txt")
+    except ValueError as exc:
+        assert "cannot escape base directory" in str(exc)
+    else:  # pragma: no cover - defensive guard
+        raise AssertionError("expected ValueError")
+
+
+def test_request_build_json_rejects_session_id_mismatch(db_session, monkeypatch) -> None:
+    client = _client_with_db(db_session)
+    monkeypatch.setattr("server.app.api.operator._github", lambda: FakeGitHubService())
+
+    first_session = client.post(
+        "/api/sessions",
+        json={
+            "name": "session-a",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "ridge",
+        },
+    ).json()["id"]
+    second_session = client.post(
+        "/api/sessions",
+        json={
+            "name": "session-b",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "ridge",
+        },
+    ).json()["id"]
+
+    response = client.post(
+        f"/api/sessions/{first_session}/builds",
+        json={
+            "session_id": second_session,
+            "role": "TX",
+            "repo_id": "high-altitude-cc",
+            "git_sha": "deadbeef",
+            "build_agent_id": "agent-build",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "payload session_id must match path session_id"
+
+
+def test_repo_endpoints_return_404_for_unknown_repo(db_session, monkeypatch) -> None:
+    client = _client_with_db(db_session)
+    monkeypatch.setattr("server.app.api.operator._github", lambda: EmptyGitHubService())
+
+    build_config_response = client.get("/api/repos/missing/build-config", params={"git_sha": "deadbeef"})
+    commits_response = client.get("/api/repos/missing/commits")
+
+    assert build_config_response.status_code == 404
+    assert "unknown repo_id missing" in build_config_response.json()["detail"]
+    assert commits_response.status_code == 404
+    assert "unknown repo_id missing" in commits_response.json()["detail"]
+
+
+def test_upload_raw_artifact_rejects_invalid_metadata_json(db_session, monkeypatch, tmp_path) -> None:
+    settings = ServerSettings(data_dir=tmp_path / "server_data")
+    client = _client_with_db_and_settings(db_session, monkeypatch, settings)
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "raw-upload-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+
+    response = client.post(
+        "/api/agent/raw-artifacts/upload",
+        data={
+            "session_id": session_id,
+            "artifact_type": "other",
+            "metadata_json": "{bad-json",
+        },
+        files={"file": ("capture.log", b"log-data", "text/plain")},
+    )
+
+    assert response.status_code == 400
+    assert "invalid metadata_json" in response.json()["detail"]
+
+
+def test_upload_raw_artifact_sanitizes_path_like_filename(db_session, monkeypatch, tmp_path) -> None:
+    settings = ServerSettings(data_dir=tmp_path / "server_data")
+    client = _client_with_db_and_settings(db_session, monkeypatch, settings)
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "raw-upload-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+
+    response = client.post(
+        "/api/agent/raw-artifacts/upload",
+        data={
+            "session_id": session_id,
+            "artifact_type": "other",
+            "role": "TX",
+        },
+        files={"file": ("../../capture.log", b"log-data", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["storage_path"] == f"raw/{session_id}/TX/capture.log"
+    assert (settings.data_dir / payload["storage_path"]).read_bytes() == b"log-data"
+
+
+def test_upload_artifact_rejects_invalid_bundle(db_session, monkeypatch, tmp_path) -> None:
+    settings = ServerSettings(data_dir=tmp_path / "server_data")
+    client = _client_with_db_and_settings(db_session, monkeypatch, settings)
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "artifact-upload-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+
+    response = client.post(
+        "/api/agent/artifacts/upload",
+        data={"session_id": session_id, "origin_type": "manual_upload", "role_hint": "TX"},
+        files={"artifact_bundle": ("bundle.zip", b"not-a-zip", "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert "invalid artifact bundle" in response.json()["detail"]
+
+
+def test_upload_artifact_rejects_cross_session_artifact_id(db_session, monkeypatch, tmp_path) -> None:
+    settings = ServerSettings(data_dir=tmp_path / "server_data")
+    client = _client_with_db_and_settings(db_session, monkeypatch, settings)
+    first_session = client.post(
+        "/api/sessions",
+        json={
+            "name": "session-a",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+    second_session = client.post(
+        "/api/sessions",
+        json={
+            "name": "session-b",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+    foreign_artifact = Artifact(
+        session_id=second_session,
+        status="pending",
+        origin_type="manual_upload",
+    )
+    db_session.add(foreign_artifact)
+    db_session.commit()
+
+    response = client.post(
+        "/api/agent/artifacts/upload",
+        data={"session_id": first_session, "artifact_id": foreign_artifact.id},
+        files={"artifact_bundle": ("bundle.zip", _bundle_bytes(session_id=first_session), "application/zip")},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "artifact not found"
+
+
+def test_download_artifact_returns_404_when_storage_file_is_missing(db_session, monkeypatch, tmp_path) -> None:
+    settings = ServerSettings(data_dir=tmp_path / "server_data")
+    client = _client_with_db_and_settings(db_session, monkeypatch, settings)
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "missing-file-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+    artifact = Artifact(
+        session_id=session_id,
+        status="ready",
+        origin_type="manual_upload",
+        storage_path="artifacts/missing/bundle.zip",
+    )
+    db_session.add(artifact)
+    db_session.commit()
+
+    response = client.get(f"/api/artifacts/{artifact.id}/download")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "artifact not found"

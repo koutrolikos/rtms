@@ -41,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     high_altitude_parser.add_argument("--build-dir", default="build/debug")
     high_altitude_parser.add_argument("--role", choices=["tx", "rx", "tx-cw"], required=True)
     high_altitude_parser.add_argument("--app-debug", type=int, choices=[0, 1], default=1)
+    high_altitude_parser.add_argument("--build-config-json")
     high_altitude_parser.add_argument("--cmake-bin", default="cmake")
     return parser
 
@@ -60,6 +61,7 @@ def main() -> None:
                     args.role,
                     "--app-debug",
                     str(args.app_debug),
+                    *(["--build-config-json", args.build_config_json] if args.build_config_json else []),
                     "--cmake-bin",
                     args.cmake_bin,
                 ]

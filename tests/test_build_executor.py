@@ -154,15 +154,15 @@ def _high_altitude_cc_payload() -> BuildArtifactPayload:
             clone_url="https://github.com/koutrolikos/High-Altitude-CC.git",
             default_branch="dev",
             build_recipe=BuildRecipe(
-                build_command="make -f Debug/makefile DEBUG=1 all hex bin",
+                build_command="range-test-agent build-high-altitude-cc --source . --build-dir build/debug",
                 artifact_globs=[
-                    "build/debug/High-Altitude-CC.elf",
-                    "build/debug/High-Altitude-CC.hex",
-                    "build/debug/High-Altitude-CC.bin",
-                    "build/debug/High-Altitude-CC.map",
+                    "build/debug/HighAltitudeCC.elf",
+                    "build/debug/HighAltitudeCC.hex",
+                    "build/debug/HighAltitudeCC.bin",
+                    "build/debug/HighAltitudeCC.map",
                 ],
-                elf_glob="build/debug/High-Altitude-CC.elf",
-                flash_image_glob="build/debug/High-Altitude-CC.elf",
+                elf_glob="build/debug/HighAltitudeCC.elf",
+                flash_image_glob="build/debug/HighAltitudeCC.elf",
                 timeout_seconds=1200,
                 env={},
                 rtt_symbol="_SEGGER_RTT",
@@ -191,7 +191,7 @@ def test_resolve_build_command_adds_high_altitude_cc_cdefs() -> None:
 
     command, cdefs = executor._resolve_build_command(_high_altitude_cc_payload())
 
-    assert command.startswith("make -f Debug/makefile DEBUG=1 all hex bin CDEFS_EXTRA=")
+    assert command.startswith("range-test-agent build-high-altitude-cc --source . --build-dir build/debug --role rx --build-config-json ")
     assert "-DAPP_ROLE_MODE=APP_ROLE_MODE_RX" in cdefs
     assert "-DAPP_DEBUG_ENABLE=0" in cdefs
     assert "-DAPP_LOG_LEVEL=2" in cdefs
@@ -232,7 +232,7 @@ def test_run_build_uploads_build_log_and_cleans_workspace(tmp_path: Path) -> Non
         build_dir = cwd / "build" / "debug"
         build_dir.mkdir(parents=True, exist_ok=True)
         for suffix in ("elf", "hex", "bin", "map"):
-            (build_dir / f"High-Altitude-CC.{suffix}").write_text("artifact", encoding="utf-8")
+            (build_dir / f"HighAltitudeCC.{suffix}").write_text("artifact", encoding="utf-8")
         if log_path is not None:
             log_path.write_text("build log", encoding="utf-8")
 
@@ -253,15 +253,15 @@ def test_run_build_uploads_build_log_and_cleans_workspace(tmp_path: Path) -> Non
                     created_at=utc_now(),
                     files=[
                         BundleFileEntry(
-                            path="build/debug/High-Altitude-CC.elf",
+                            path="build/debug/HighAltitudeCC.elf",
                             size_bytes=8,
                             sha256="artifact-sha",
                             kind="payload",
                         )
                     ],
                     flash=FlashSpec(
-                        flash_image_path="build/debug/High-Altitude-CC.elf",
-                        elf_path="build/debug/High-Altitude-CC.elf",
+                        flash_image_path="build/debug/HighAltitudeCC.elf",
+                        elf_path="build/debug/HighAltitudeCC.elf",
                         rtt_symbol="_SEGGER_RTT",
                     ),
                 ),
@@ -283,7 +283,7 @@ def test_run_build_uploads_build_log_and_cleans_workspace(tmp_path: Path) -> Non
     result = executor.run_build(payload, client=FakeClient(), agent_id="agent-1")
 
     assert result.success is True
-    assert "-DAPP_ROLE_MODE=APP_ROLE_MODE_RX" in commands[0]
+    assert commands[0].startswith("range-test-agent build-high-altitude-cc")
     assert raw_upload_calls[0]["artifact_type"] == RawArtifactType.BUILD_LOG
     assert raw_upload_calls[0]["role"] == Role.RX
     assert result.uploaded_raw_artifacts[0]["raw_artifact_id"] == "raw-build-log"

@@ -10,17 +10,28 @@
 {% set can_start = setup_ready and artifacts_ready %}
 {% set run_active = session.status in ["preparing_roles", "ready_to_capture", "capturing", "merging", "report_ready", "failed", "cancelled"] %}
 {% set report_ready = report and report.html_storage_path %}
-{% set stage = namespace(current=1) %}
+{% set stage = namespace(current=1, active_id="stage-configure") %}
 {% if setup_ready %}
   {% if report_ready or session.status == "report_ready" %}
     {% set stage.current = 4 %}
-  {% elif not artifacts_ready or session.status in ["draft", "selecting_artifacts", "awaiting_hosts", "building_artifacts"] %}
+    {% set stage.active_id = "stage-outputs" %}
+  {% elif not artifacts_ready or session.status in ["draft", "selecting_artifacts", "building_artifacts"] %}
     {% set stage.current = 2 %}
+    {% set stage.active_id = "stage-artifacts" %}
   {% else %}
     {% set stage.current = 3 %}
+    {% set stage.active_id = "stage-run" %}
   {% endif %}
 {% endif %}
-<section class="session-screen">
+<section
+  class="session-screen"
+  data-auto-refresh-url="/sessions/{{ session.id }}/live"
+  data-auto-refresh-version="{{ live_version }}"
+  data-auto-refresh-interval-ms="2500"
+  data-stage-storage-key="session-stage:{{ session.id }}"
+  data-active-stage-id="{{ stage.active_id }}"
+  data-active-stage-storage-key="session-active-stage:{{ session.id }}"
+>
 <section class="hero session-hero">
   <div class="session-hero-main">
     <p class="eyebrow">Session</p>
@@ -197,49 +208,13 @@
           <div class="panel-section-grid">
             <section class="panel-section">
               <div class="panel-section-head">
-                <h4>Existing</h4>
-              </div>
-              <div class="stack">
-                <form method="post" action="/sessions/{{ session.id }}/artifacts/assign" class="inline-form">
-                  <input type="hidden" name="role" value="TX" />
-                  <select name="artifact_id" required>
-                    <option value="">TX artifact</option>
-                    {% for artifact in artifacts %}
-                    {% if artifact.status == "ready" %}
-                    <option value="{{ artifact.id }}" {% if session.tx_artifact_id == artifact.id %}selected{% endif %}>
-                      {{ artifact.id[:8] }} | {{ artifact.origin_type }} | {{ artifact.git_sha or "uploaded" }}
-                    </option>
-                    {% endif %}
-                    {% endfor %}
-                  </select>
-                  <button type="submit">Assign TX</button>
-                </form>
-                <form method="post" action="/sessions/{{ session.id }}/artifacts/assign" class="inline-form">
-                  <input type="hidden" name="role" value="RX" />
-                  <select name="artifact_id" required>
-                    <option value="">RX artifact</option>
-                    {% for artifact in artifacts %}
-                    {% if artifact.status == "ready" %}
-                    <option value="{{ artifact.id }}" {% if session.rx_artifact_id == artifact.id %}selected{% endif %}>
-                      {{ artifact.id[:8] }} | {{ artifact.origin_type }} | {{ artifact.git_sha or "uploaded" }}
-                    </option>
-                    {% endif %}
-                    {% endfor %}
-                  </select>
-                  <button type="submit">Assign RX</button>
-                </form>
-              </div>
-            </section>
-
-            <section class="panel-section">
-              <div class="panel-section-head">
                 <h4>Build</h4>
               </div>
               <form method="post" action="/sessions/{{ session.id }}/builds" class="stack" id="session-build-form">
                 <input type="hidden" name="build_config_json" id="build-config-json" />
                 <div class="grid two">
                   <label>
-                    <span>Assign Build Output To</span>
+                    <span>Target Slot</span>
                     <select name="role" id="build-role" required>
                       <option value="TX" {% if not session.tx_artifact_id and session.rx_artifact_id %}selected{% endif %}>TX Slot</option>
                       <option value="RX" {% if session.tx_artifact_id and not session.rx_artifact_id %}selected{% endif %}>RX Slot</option>
@@ -262,7 +237,7 @@
                   id="build-role-hint"
                   data-tx-artifact="{{ session.tx_artifact_id | short_id if session.tx_artifact_id else '' }}"
                   data-rx-artifact="{{ session.rx_artifact_id | short_id if session.rx_artifact_id else '' }}"
-                ></p>
+                >Build outputs auto-assign to the selected slot when ready.</p>
                 <label>
                   <span>Repo</span>
                   <select name="repo_id" id="build-repo-id" required>
@@ -612,8 +587,16 @@
 </section>
 <script>
 (() => {
+  const screen = document.querySelector(".session-screen");
+  if (!(screen instanceof HTMLElement)) {
+    return;
+  }
+
   const stages = Array.from(document.querySelectorAll("[data-pipeline-stage]"));
   const navButtons = Array.from(document.querySelectorAll("[data-pipeline-jump]"));
+  const storageKey = screen.dataset.stageStorageKey || "";
+  const activeStageId = screen.dataset.activeStageId || "";
+  const activeStageStorageKey = screen.dataset.activeStageStorageKey || "";
   if (!stages.length) {
     return;
   }
@@ -632,6 +615,10 @@
       const matches = button.getAttribute("data-pipeline-jump") === targetStage.id;
       button.classList.toggle("focused", matches);
     });
+
+    if (storageKey) {
+      window.sessionStorage.setItem(storageKey, targetStage.id);
+    }
   };
 
   stages.forEach((stageElement) => {
@@ -656,11 +643,33 @@
     });
   });
 
-  const initialStage =
+  const currentActiveStage =
+    (activeStageId ? stages.find((stageElement) => stageElement.id === activeStageId) : null) ||
     stages.find((stageElement) => stageElement.dataset.stageStatus === "active") ||
+    null;
+  const savedStageId = storageKey ? window.sessionStorage.getItem(storageKey) : "";
+  const savedActiveStageId = activeStageStorageKey ? window.sessionStorage.getItem(activeStageStorageKey) : "";
+  const savedStage = savedStageId
+    ? stages.find((stageElement) => stageElement.id === savedStageId)
+    : null;
+  const shouldAdvanceToActiveStage =
+    !!currentActiveStage &&
+    currentActiveStage.id !== savedActiveStageId &&
+    (
+      !savedStage ||
+      savedStageId === savedActiveStageId ||
+      (!savedActiveStageId && savedStage.dataset.stageStatus === "complete")
+    );
+  const initialStage =
+    (shouldAdvanceToActiveStage ? currentActiveStage : null) ||
+    savedStage ||
+    currentActiveStage ||
     stages.find((stageElement) => stageElement.classList.contains("is-open")) ||
     stages[0];
   setOpenStage(initialStage);
+  if (activeStageStorageKey && currentActiveStage) {
+    window.sessionStorage.setItem(activeStageStorageKey, currentActiveStage.id);
+  }
 })();
 
 (() => {
@@ -724,8 +733,8 @@
     }
     const currentArtifact = role === "TX" ? buildRoleHint.dataset.txArtifact : buildRoleHint.dataset.rxArtifact;
     buildRoleHint.textContent = currentArtifact
-      ? `${role}: replaces ${currentArtifact}`
-      : `${role}: empty slot`;
+      ? `Build auto-assigns to ${role} slot and replaces ${currentArtifact}.`
+      : `Build auto-assigns to ${role} slot.`;
   };
 
   const renderSummary = (buildConfig, sha) => {

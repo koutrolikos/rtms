@@ -14,7 +14,12 @@
     {% set summary.build = summary.build + 1 %}
   {% endif %}
 {% endfor %}
-<section class="hosts-screen">
+<section
+  class="hosts-screen"
+  data-auto-refresh-url="/hosts/live"
+  data-auto-refresh-version="{{ live_version }}"
+  data-auto-refresh-interval-ms="2500"
+>
   <section class="hosts-header">
     <div class="hosts-header-main">
       <h1>Hosts</h1>

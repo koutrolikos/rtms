@@ -68,7 +68,8 @@ Windows PowerShell:
 ```
 
 All scripts install dependencies, clone/update RTMS into `~/rtms-agent`, create a venv,
-install the package, and write an env file.
+install the package, write an env file, and pin runtime data under that install directory
+by default instead of the caller's current working directory.
 
 ### 1) Pick your server URL
 
@@ -161,7 +162,7 @@ Install only what you need for the capabilities enabled on that host.
 
 - Core agent (always): Python 3.11+, pip/venv, network access to server
 - Build-capable agent: `git` plus repo-specific build tools
-- Current High-Altitude-CC build recipe: `make`, `cmake`, `arm-none-eabi-gcc`
+- Current High-Altitude-CC build recipe: `cmake`, `arm-none-eabi-gcc`
 - Flash-capable agent: `openocd` plus correct target/interface scripts
 - Capture-capable agent: tool referenced by `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` (if not simulating capture)
 
@@ -209,6 +210,14 @@ If you need to force the public address used by agents, set:
 ```bash
 export RANGE_TEST_SERVER_PUBLIC_BASE_URL="http://172.20.10.3:8000"
 ```
+
+By default, the bootstrap-generated env file pins:
+
+- `RANGE_TEST_AGENT_DATA_DIR=~/rtms-agent/agent_data`
+- `RANGE_TEST_SERVER_DATA_DIR=~/rtms-agent/server_data`
+
+If you do a manual editable install instead of bootstrap, set those explicitly if you do
+not want runtime data created relative to the directory where you launch the command.
 
 3. Start an agent:
 
@@ -265,9 +274,11 @@ The bundled `High-Altitude-CC` example repo is built from the session page by:
 - selecting TX or RX plus the exposed firmware config fields
 - queueing the server-owned build job on a build-capable agent
 
-The agent builds that repo through `make -f Debug/makefile DEBUG=1 all hex bin`
-with generated `CDEFS_EXTRA` overrides, uploads the bundle and build log, then
-deletes its local checkout and build files for that artifact.
+The agent builds that repo through
+`range-test-agent build-high-altitude-cc --source . --build-dir build/debug`
+with generated role/build-config JSON from the session form, patches
+`Core/Inc/app_config.h` inside the clean clone, uploads the bundle and build
+log, then deletes its local checkout and build files for that artifact.
 
 If the agent shows `SSL: WRONG_VERSION_NUMBER`, it is almost certainly using
 `https://<server-ip>:8000` against this plain HTTP server. Use `http://`, for example:

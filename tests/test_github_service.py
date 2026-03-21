@@ -53,8 +53,8 @@ def _write_repo_config(tmp_path: Path, repo_root: Path) -> Path:
                     "default_branch": "dev",
                     "local_checkout_path": str(repo_root),
                     "build_recipe": {
-                        "build_command": "make -f Debug/makefile DEBUG=1 all hex bin",
-                        "artifact_globs": ["build/debug/High-Altitude-CC.elf"],
+                        "build_command": "range-test-agent build-high-altitude-cc --source . --build-dir build/debug",
+                        "artifact_globs": ["build/debug/HighAltitudeCC.elf"],
                     },
                 }
             ]

@@ -72,7 +72,10 @@ py -3.11 -m venv "$InstallDir\.venv"
 Write-Host '[4/5] Writing agent env file'
 $envFile = "$InstallDir\.agent-env.ps1"
 @"
+`$env:RANGE_TEST_INSTALL_DIR = '$InstallDir'
 `$env:RANGE_TEST_SERVER_URL = '$ServerUrl'
+`$env:RANGE_TEST_AGENT_DATA_DIR = '$InstallDir\agent_data'
+`$env:RANGE_TEST_SERVER_DATA_DIR = '$InstallDir\server_data'
 `$env:RANGE_TEST_OPENOCD_TARGET_CFG = '$OpenOcdTargetCfg'
 `$env:RANGE_TEST_AGENT_BUILD_CAPABLE = '$BuildCapable'
 `$env:RANGE_TEST_AGENT_FLASH_CAPABLE = '$FlashCapable'

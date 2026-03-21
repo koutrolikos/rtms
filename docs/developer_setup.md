@@ -119,7 +119,7 @@ Install only what the host will do.
 
 - Core agent (always): Python 3.11+, pip/venv, server network access
 - Build-capable: `git` + build tools required by the repo recipe
-- High-Altitude-CC build recipe today: `make`, `cmake`, `arm-none-eabi-gcc`
+- High-Altitude-CC build recipe today: `cmake`, `arm-none-eabi-gcc`
 - Flash-capable: `openocd` + correct interface/target configs
 - Capture-capable: external capture tool used by `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` (unless simulated)
 
@@ -198,13 +198,14 @@ The bundled `High-Altitude-CC` example is configured as a single repo entry
 built through:
 
 ```bash
-make -f Debug/makefile DEBUG=1 all hex bin
+range-test-agent build-high-altitude-cc --source . --build-dir build/debug --role <tx|rx> --build-config-json <json>
 ```
 
 RTMS resolves the operator-selected TX/RX role plus the exposed firmware build
-config into `CDEFS_EXTRA` overrides, queues the build job from the server UI,
-uploads the build log as a raw artifact, and removes the agent's local build
-workspace after a successful upload.
+config into a generated High-Altitude-CC build config JSON payload, patches the
+clean clone's `Core/Inc/app_config.h`, runs the tracked CMake build, uploads the
+build log as a raw artifact, and removes the agent's local build workspace after
+a successful upload.
 
 ## Run Server
 
@@ -218,6 +219,15 @@ If the detected address is wrong, set:
 ```bash
 export RANGE_TEST_SERVER_PUBLIC_BASE_URL="http://172.20.10.3:8000"
 ```
+
+When the machine was bootstrapped with the provided scripts, runtime state is pinned under
+the install directory by default:
+
+- `RANGE_TEST_AGENT_DATA_DIR=<install-dir>/agent_data`
+- `RANGE_TEST_SERVER_DATA_DIR=<install-dir>/server_data`
+
+That avoids creating `agent_data/` or `server_data/` in whichever directory the user happened
+to be in when launching `range-test-agent` or `range-test-server`.
 
 Key env vars:
 

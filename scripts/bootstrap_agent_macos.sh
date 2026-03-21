@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+CALLER_PWD="$(pwd -P)"
 SERVER_URL=""
 MODE="full"
 INSTALL_BUILD_TOOLS="auto"
@@ -39,30 +40,133 @@ require_cmd() {
   fi
 }
 
+die() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+require_value() {
+  local option="$1"
+  local value="${2-}"
+  if [[ -z "$value" || "$value" == --* ]]; then
+    die "missing value for $option"
+  fi
+}
+
+normalize_path() {
+  local input="$1"
+  if [[ -z "$input" ]]; then
+    die "--install-dir cannot be empty"
+  fi
+  case "$input" in
+    "~")
+      printf '%s\n' "$HOME"
+      ;;
+    "~/"*)
+      printf '%s/%s\n' "$HOME" "${input#~/}"
+      ;;
+    /*)
+      printf '%s\n' "$input"
+      ;;
+    *)
+      printf '%s/%s\n' "$CALLER_PWD" "$input"
+      ;;
+  esac
+}
+
+normalize_server_url() {
+  local input="$1"
+  local trimmed="${input%/}"
+  if [[ "$trimmed" != http://* && "$trimmed" != https://* ]]; then
+    die "--server-url must start with http:// or https://"
+  fi
+  if [[ "$trimmed" == "http://0.0.0.0"* || "$trimmed" == "https://0.0.0.0"* ]]; then
+    die "--server-url cannot use 0.0.0.0; use 127.0.0.1 for same-machine development or a routable host/IP for remote agents"
+  fi
+  printf '%s\n' "$trimmed"
+}
+
+ensure_install_target_ready() {
+  if [[ -e "$INSTALL_DIR" && ! -d "$INSTALL_DIR" ]]; then
+    die "--install-dir points to a file: $INSTALL_DIR"
+  fi
+  if [[ -d "$INSTALL_DIR" && ! -d "$INSTALL_DIR/.git" ]]; then
+    if [[ -n "$(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+      die "--install-dir already exists and is not an RTMS git checkout: $INSTALL_DIR"
+    fi
+  fi
+}
+
+find_brew() {
+  if command -v brew >/dev/null 2>&1; then
+    command -v brew
+    return
+  fi
+  if [[ -x "/opt/homebrew/bin/brew" ]]; then
+    printf '%s\n' "/opt/homebrew/bin/brew"
+    return
+  fi
+  if [[ -x "/usr/local/bin/brew" ]]; then
+    printf '%s\n' "/usr/local/bin/brew"
+    return
+  fi
+  die "Homebrew is required but brew was not found on PATH or in the standard install locations"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --server-url=*)
+      SERVER_URL="${1#*=}"
+      shift
+      ;;
     --server-url)
-      SERVER_URL="${2:-}"
+      require_value "$1" "${2-}"
+      SERVER_URL="$2"
       shift 2
+      ;;
+    --mode=*)
+      MODE="${1#*=}"
+      shift
       ;;
     --mode)
-      MODE="${2:-}"
+      require_value "$1" "${2-}"
+      MODE="$2"
       shift 2
+      ;;
+    --install-build-tools=*)
+      INSTALL_BUILD_TOOLS="${1#*=}"
+      shift
       ;;
     --install-build-tools)
-      INSTALL_BUILD_TOOLS="${2:-}"
+      require_value "$1" "${2-}"
+      INSTALL_BUILD_TOOLS="$2"
       shift 2
+      ;;
+    --repo-url=*)
+      REPO_URL="${1#*=}"
+      shift
       ;;
     --repo-url)
-      REPO_URL="${2:-}"
+      require_value "$1" "${2-}"
+      REPO_URL="$2"
       shift 2
+      ;;
+    --install-dir=*)
+      INSTALL_DIR="${1#*=}"
+      shift
       ;;
     --install-dir)
-      INSTALL_DIR="${2:-}"
+      require_value "$1" "${2-}"
+      INSTALL_DIR="$2"
       shift 2
       ;;
+    --openocd-target-cfg=*)
+      OPENOCD_TARGET_CFG="${1#*=}"
+      shift
+      ;;
     --openocd-target-cfg)
-      OPENOCD_TARGET_CFG="${2:-}"
+      require_value "$1" "${2-}"
+      OPENOCD_TARGET_CFG="$2"
       shift 2
       ;;
     -h|--help)
@@ -82,6 +186,9 @@ if [[ -z "$SERVER_URL" ]]; then
   usage
   exit 1
 fi
+
+SERVER_URL="$(normalize_server_url "$SERVER_URL")"
+INSTALL_DIR="$(normalize_path "$INSTALL_DIR")"
 
 if [[ "$MODE" != "full" && "$MODE" != "build-only" && "$MODE" != "flash-capture" ]]; then
   echo "error: --mode must be one of: full, build-only, flash-capture" >&2
@@ -120,8 +227,6 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-cd "$HOME"
-
 require_cmd xcode-select
 if ! xcode-select -p >/dev/null 2>&1; then
   echo "error: Xcode Command Line Tools are required." >&2
@@ -129,23 +234,24 @@ if ! xcode-select -p >/dev/null 2>&1; then
   exit 1
 fi
 
-require_cmd brew
+BREW_BIN="$(find_brew)"
 
 BASE_PACKAGES=(python@3.11 git openocd)
 BUILD_PACKAGES=(cmake make)
 
 echo "[1/6] Installing Homebrew packages"
-brew update
-brew install "${BASE_PACKAGES[@]}"
+"$BREW_BIN" update
+"$BREW_BIN" install "${BASE_PACKAGES[@]}"
 if [[ "$INSTALL_BUILD_TOOLS" == "true" ]]; then
-  brew install "${BUILD_PACKAGES[@]}"
-  if ! brew install arm-none-eabi-gcc; then
+  "$BREW_BIN" install "${BUILD_PACKAGES[@]}"
+  if ! "$BREW_BIN" install arm-none-eabi-gcc; then
     echo "warning: could not install arm-none-eabi-gcc via Homebrew." >&2
     echo "warning: install the ARM GNU toolchain manually if build jobs require it." >&2
   fi
 fi
 
 echo "[2/6] Cloning or updating RTMS repo"
+ensure_install_target_ready
 mkdir -p "$(dirname "$INSTALL_DIR")"
 if [[ -d "$INSTALL_DIR/.git" ]]; then
   git -C "$INSTALL_DIR" fetch --all --tags
@@ -172,7 +278,10 @@ echo "[4/6] Writing agent env file"
 ENV_FILE="$INSTALL_DIR/.agent-env.sh"
 cat > "$ENV_FILE" <<ENVVARS
 export PATH="$INSTALL_DIR/.venv/bin:\$PATH"
+export RANGE_TEST_INSTALL_DIR="$INSTALL_DIR"
 export RANGE_TEST_SERVER_URL="$SERVER_URL"
+export RANGE_TEST_AGENT_DATA_DIR="$INSTALL_DIR/agent_data"
+export RANGE_TEST_SERVER_DATA_DIR="$INSTALL_DIR/server_data"
 export RANGE_TEST_OPENOCD_TARGET_CFG="$OPENOCD_TARGET_CFG"
 export RANGE_TEST_AGENT_BUILD_CAPABLE=$BUILD_CAPABLE
 export RANGE_TEST_AGENT_FLASH_CAPABLE=$FLASH_CAPABLE
@@ -186,6 +295,9 @@ mkdir -p "$WRAPPER_DIR"
 cat > "$WRAPPER_DIR/range-test-server" <<SHIM
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ -f "$INSTALL_DIR/.agent-env.sh" ]]; then
+  source "$INSTALL_DIR/.agent-env.sh"
+fi
 if [[ "\${1:-}" == "run" ]]; then
   shift
 fi

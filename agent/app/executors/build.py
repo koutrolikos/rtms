@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import glob
+import json
 import logging
 import os
 import shlex
@@ -200,7 +201,25 @@ class BuildExecutor:
                 },
             )
         cdefs_extra = build_high_altitude_cc_cdefs(payload.role_hint, payload.build_config)
-        return f"{command} CDEFS_EXTRA={shlex.quote(' '.join(cdefs_extra))}", cdefs_extra
+        role = payload.role_hint.value.lower()
+        build_config_json = json.dumps(payload.build_config.model_dump(mode="json"), separators=(",", ":"))
+        return (
+            " ".join(
+                [
+                    "range-test-agent",
+                    "build-high-altitude-cc",
+                    "--source",
+                    shlex.quote("."),
+                    "--build-dir",
+                    shlex.quote("build/debug"),
+                    "--role",
+                    shlex.quote(role),
+                    "--build-config-json",
+                    shlex.quote(build_config_json),
+                ]
+            ),
+            cdefs_extra,
+        )
 
     def _cleanup_success_paths(self, repo_root: Path, output_dir: Path) -> list[str]:
         removed: list[str] = []

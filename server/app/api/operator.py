@@ -16,6 +16,7 @@ from server.app.models.entities import AgentHost, Artifact, RawArtifact
 from server.app.presentation import register_template_helpers
 from server.app.services.agents import visible_agent_status
 from server.app.services.github import GitHubService
+from server.app.services.live_updates import hosts_change_token, session_change_token
 from server.app.services.parsing import merge_session_logs
 from server.app.services.reporting import generate_report
 from server.app.services.sessions import (
@@ -37,6 +38,7 @@ from server.app.services.sessions import (
     update_session_metadata,
     create_session,
 )
+from server.app.services.storage import FileStorage
 from shared.high_altitude_cc import (
     HIGH_ALTITUDE_CC_APP_CONFIG_PATH,
     HIGH_ALTITUDE_CC_REPO_ID,
@@ -63,6 +65,29 @@ router = APIRouter(tags=["operator"])
 
 def _github() -> GitHubService:
     return GitHubService(get_settings())
+
+
+def _storage() -> FileStorage:
+    return FileStorage(get_settings().data_dir)
+
+
+def _get_repo_or_404(repo_id: str, github: GitHubService | None = None):
+    github_service = github or _github()
+    try:
+        return github_service.get_repo(repo_id)
+    except KeyError as exc:
+        detail = exc.args[0] if exc.args else f"unknown repo_id {repo_id}"
+        raise HTTPException(status_code=404, detail=detail) from exc
+
+
+def _stored_file_response(storage_path: str, *, not_found_detail: str) -> FileResponse:
+    try:
+        path = _storage().resolve(storage_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=not_found_detail) from exc
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=not_found_detail)
+    return FileResponse(path)
 
 
 def _parse_build_config_json(build_config_json: str | None) -> HighAltitudeCCBuildConfig | None:
@@ -94,6 +119,7 @@ def hosts_overview(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
             "host_status": {host.id: visible_agent_status(host, settings) for host in hosts},
             "sessions": list_sessions(db),
             "settings": settings,
+            "live_version": hosts_change_token(db),
         },
     )
 
@@ -157,8 +183,20 @@ def session_detail(request: Request, session_id: str, db: Session = Depends(get_
             "raw_artifacts": raw_artifacts(db, session.id),
             "report": report,
             "repos": github.list_repos(),
+            "live_version": session_change_token(db, session),
         },
     )
+
+
+@router.get("/hosts/live")
+def hosts_live(db: Session = Depends(get_db)) -> dict[str, str]:
+    return {"version": hosts_change_token(db)}
+
+
+@router.get("/sessions/{session_id}/live")
+def session_live(session_id: str, db: Session = Depends(get_db)) -> dict[str, str]:
+    session = get_session_or_404(db, session_id)
+    return {"version": session_change_token(db, session)}
 
 
 @router.post("/sessions/{session_id}/metadata")
@@ -226,7 +264,7 @@ def session_build_action(
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
     github = _github()
-    repo = github.get_repo(repo_id)
+    repo = _get_repo_or_404(repo_id, github)
     request_build(
         db,
         settings=get_settings(),
@@ -276,7 +314,17 @@ def report_page(request: Request, session_id: str, db: Session = Depends(get_db)
             reports_dir=get_settings().reports_dir,
             template_dir=Path(__file__).resolve().parent.parent / "templates",
         )
-    html = (get_settings().data_dir / report.html_storage_path).read_text(encoding="utf-8")
+    try:
+        html = _storage().read_text(report.html_storage_path)
+    except (FileNotFoundError, ValueError):
+        report = generate_report(
+            db,
+            session=session,
+            storage_root=get_settings().data_dir,
+            reports_dir=get_settings().reports_dir,
+            template_dir=Path(__file__).resolve().parent.parent / "templates",
+        )
+        html = _storage().read_text(report.html_storage_path)
     return templates.TemplateResponse(
         name="report_page.html",
         request=request,
@@ -373,7 +421,10 @@ def assign_artifact_json(
 def request_build_json(
     session_id: str, payload: BuildRequest, db: Session = Depends(get_db)
 ) -> dict:
-    repo = _github().get_repo(payload.repo_id)
+    if payload.session_id != session_id:
+        raise HTTPException(status_code=400, detail="payload session_id must match path session_id")
+    github = _github()
+    repo = _get_repo_or_404(payload.repo_id, github)
     artifact, job = request_build(db, settings=get_settings(), request=payload, repo=repo)
     return {"artifact_id": artifact.id, "job_id": job.id}
 
@@ -470,7 +521,7 @@ def repos_json() -> list[dict]:
 @router.get("/api/repos/{repo_id}/build-config")
 def repo_build_config_json(repo_id: str, git_sha: str) -> dict:
     github = _github()
-    repo = github.get_repo(repo_id)
+    repo = _get_repo_or_404(repo_id, github)
     if repo.id != HIGH_ALTITUDE_CC_REPO_ID:
         raise HTTPException(status_code=404, detail=f"build-config endpoint not supported for {repo_id}")
     try:
@@ -501,8 +552,10 @@ def healthz() -> dict:
 
 @router.get("/api/repos/{repo_id}/commits")
 def commits_json(repo_id: str, q: str | None = None) -> list[dict]:
+    github = _github()
+    _get_repo_or_404(repo_id, github)
     try:
-        return _github().browse_commits(repo_id, query=q)
+        return github.browse_commits(repo_id, query=q)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (ValueError, httpx.HTTPError) as exc:
@@ -514,7 +567,7 @@ def download_artifact(artifact_id: str, db: Session = Depends(get_db)) -> FileRe
     artifact = db.get(Artifact, artifact_id)
     if artifact is None or artifact.storage_path is None:
         raise HTTPException(status_code=404, detail="artifact not found")
-    return FileResponse(get_settings().data_dir / artifact.storage_path)
+    return _stored_file_response(artifact.storage_path, not_found_detail="artifact not found")
 
 
 @router.get("/api/raw-artifacts/{raw_artifact_id}/download")
@@ -522,4 +575,4 @@ def download_raw_artifact(raw_artifact_id: str, db: Session = Depends(get_db)) -
     raw = db.get(RawArtifact, raw_artifact_id)
     if raw is None:
         raise HTTPException(status_code=404, detail="raw artifact not found")
-    return FileResponse(get_settings().data_dir / raw.storage_path)
+    return _stored_file_response(raw.storage_path, not_found_detail="raw artifact not found")
