@@ -10,10 +10,10 @@ OPENOCD_TARGET_CFG="target/stm32g4x.cfg"
 
 usage() {
   cat <<'USAGE'
-Bootstrap RTMS agent on Linux.
+Bootstrap RTMS agent on macOS.
 
 Usage:
-  bootstrap_agent_linux.sh --server-url URL [options]
+  bootstrap_agent_macos.sh --server-url URL [options]
 
 Required:
   --server-url URL            RTMS server URL, example: http://172.20.10.3:8000
@@ -27,8 +27,8 @@ Options:
   -h, --help                  Show help
 
 Examples:
-  ./scripts/bootstrap_agent_linux.sh --server-url http://172.20.10.3:8000
-  ./scripts/bootstrap_agent_linux.sh --server-url http://172.20.10.3:8000 --mode build-only
+  ./scripts/bootstrap_agent_macos.sh --server-url http://172.20.10.3:8000
+  ./scripts/bootstrap_agent_macos.sh --server-url http://172.20.10.3:8000 --mode build-only
 USAGE
 }
 
@@ -115,28 +115,33 @@ else
   CAPTURE_CAPABLE=1
 fi
 
-cd "$HOME"
-
-if command -v apt-get >/dev/null 2>&1; then
-  PKG_MANAGER="apt"
-elif command -v dnf >/dev/null 2>&1; then
-  PKG_MANAGER="dnf"
-else
-  echo "error: unsupported Linux package manager. Use apt or dnf." >&2
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "error: this script is for macOS (Darwin) only" >&2
   exit 1
 fi
 
-echo "[1/6] Installing OS packages via $PKG_MANAGER"
-if [[ "$PKG_MANAGER" == "apt" ]]; then
-  sudo apt-get update
-  sudo apt-get install -y python3 python3-venv python3-pip git curl openocd
-  if [[ "$INSTALL_BUILD_TOOLS" == "true" ]]; then
-    sudo apt-get install -y make cmake gcc-arm-none-eabi
-  fi
-else
-  sudo dnf install -y python3 python3-pip git curl openocd
-  if [[ "$INSTALL_BUILD_TOOLS" == "true" ]]; then
-    sudo dnf install -y make cmake arm-none-eabi-gcc-cs
+cd "$HOME"
+
+require_cmd xcode-select
+if ! xcode-select -p >/dev/null 2>&1; then
+  echo "error: Xcode Command Line Tools are required." >&2
+  echo "Run: xcode-select --install" >&2
+  exit 1
+fi
+
+require_cmd brew
+
+BASE_PACKAGES=(python@3.11 git openocd)
+BUILD_PACKAGES=(cmake make)
+
+echo "[1/6] Installing Homebrew packages"
+brew update
+brew install "${BASE_PACKAGES[@]}"
+if [[ "$INSTALL_BUILD_TOOLS" == "true" ]]; then
+  brew install "${BUILD_PACKAGES[@]}"
+  if ! brew install arm-none-eabi-gcc; then
+    echo "warning: could not install arm-none-eabi-gcc via Homebrew." >&2
+    echo "warning: install the ARM GNU toolchain manually if build jobs require it." >&2
   fi
 fi
 
@@ -150,8 +155,16 @@ else
 fi
 
 echo "[3/6] Creating Python virtualenv and installing package"
-require_cmd python3
-python3 -m venv "$INSTALL_DIR/.venv"
+PYTHON_BIN=""
+if command -v python3.11 >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python3.11)"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python3)"
+else
+  echo "error: python3.11 or python3 not found after installation" >&2
+  exit 1
+fi
+"$PYTHON_BIN" -m venv "$INSTALL_DIR/.venv"
 "$INSTALL_DIR/.venv/bin/pip" install --upgrade pip
 "$INSTALL_DIR/.venv/bin/pip" install -e "$INSTALL_DIR"
 

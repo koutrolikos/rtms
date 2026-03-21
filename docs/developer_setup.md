@@ -1,5 +1,38 @@
 # Developer Setup
 
+## Start Here (First-Time Setup)
+
+Do these first, in this order:
+
+1. Clone the repo.
+2. Enter the repo folder.
+3. Run one bootstrap script for your OS.
+
+```bash
+git clone https://github.com/koutrolikos/rtms.git
+cd rtms
+```
+
+macOS:
+
+```bash
+./scripts/bootstrap_agent_macos.sh --server-url http://172.20.10.3:8000
+```
+
+Linux:
+
+```bash
+./scripts/bootstrap_agent_linux.sh --server-url http://172.20.10.3:8000
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\bootstrap_agent_windows.ps1 -ServerUrl http://172.20.10.3:8000
+```
+
+After bootstrap finishes on macOS/Linux, open a new terminal and run `range-test-server run` or `range-test-agent run` directly.
+
 ## Fastest Path (Fresh Machine)
 
 If your goal is "start a new agent on a random machine with minimal effort", use one of these exact flows.
@@ -10,6 +43,12 @@ Linux:
 
 ```bash
 ./scripts/bootstrap_agent_linux.sh --server-url http://172.20.10.3:8000
+```
+
+macOS:
+
+```bash
+./scripts/bootstrap_agent_macos.sh --server-url http://172.20.10.3:8000
 ```
 
 Windows PowerShell:

@@ -1,21 +1,23 @@
 # RTMS
 
-Distributed RF range-test orchestration MVP with:
+## Start Here (New User)
 
-- a FastAPI control plane
-- polling Python host agents
-- session-scoped artifact storage
-- OpenOCD-compatible flash/verify orchestration
-- capture coordination across TX/RX hosts
-- raw-log preservation, parsing, merge, and HTML report generation
+Do these first, in this order:
 
-## Quick start
+1. Clone the repo.
+2. Enter the repo folder.
+3. Run one bootstrap script for your OS.
 
-## Zero To Agent (Copy-Paste Edition)
+```bash
+git clone https://github.com/koutrolikos/rtms.git
+cd rtms
+```
 
-If you have a fresh machine and want to run an agent with minimal thinking, use this.
+macOS:
 
-### 0) One-command bootstrap scripts (recommended)
+```bash
+./scripts/bootstrap_agent_macos.sh --server-url http://172.20.10.3:8000
+```
 
 Linux:
 
@@ -29,8 +31,44 @@ Windows PowerShell:
 .\scripts\bootstrap_agent_windows.ps1 -ServerUrl http://172.20.10.3:8000
 ```
 
-Both scripts install dependencies, clone/update RTMS into `~/rtms-agent`, create a venv,
-install the package, write an env file, and print the exact `range-test-agent run` commands.
+The script installs dependencies and prepares Python.
+On macOS/Linux it also installs command shims, so after it finishes you can open a new terminal and run `range-test-server run` or `range-test-agent run` directly.
+
+Distributed RF range-test orchestration MVP with:
+
+- a FastAPI control plane
+- polling Python host agents
+- session-scoped artifact storage
+- OpenOCD-compatible flash/verify orchestration
+- capture coordination across TX/RX hosts
+- raw-log preservation, parsing, merge, and HTML report generation
+
+## Zero To Agent (Copy-Paste Edition)
+
+If you have a fresh machine and want to run an agent with minimal thinking, use this.
+
+### 0) One-command bootstrap scripts (recommended)
+
+Linux:
+
+```bash
+./scripts/bootstrap_agent_linux.sh --server-url http://172.20.10.3:8000
+```
+
+macOS:
+
+```bash
+./scripts/bootstrap_agent_macos.sh --server-url http://172.20.10.3:8000
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\bootstrap_agent_windows.ps1 -ServerUrl http://172.20.10.3:8000
+```
+
+All scripts install dependencies, clone/update RTMS into `~/rtms-agent`, create a venv,
+install the package, and write an env file.
 
 ### 1) Pick your server URL
 
