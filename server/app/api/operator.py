@@ -17,7 +17,7 @@ from server.app.presentation import register_template_helpers
 from server.app.services.agents import visible_agent_status
 from server.app.services.github import GitHubService
 from server.app.services.live_updates import hosts_change_token, session_change_token
-from server.app.services.parsing import merge_session_logs
+from server.app.services.parsing import flatten_machine_timeline, merge_session_logs
 from server.app.services.reporting import generate_report
 from server.app.services.sessions import (
     add_annotation,
@@ -509,7 +509,7 @@ def timeline_json(session_id: str, db: Session = Depends(get_db)) -> list[dict]:
         raw_items=raw_artifacts(db, session.id),
         storage_root=get_settings().data_dir,
     )
-    return [event.model_dump(mode="json") for event in merge.merged_events]
+    return flatten_machine_timeline(merge)
 
 
 @router.get("/api/repos")

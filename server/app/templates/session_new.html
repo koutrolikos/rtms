@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block title %}New Session{% endblock %}
 {% block content %}
-<section class="panel">
+<section class="panel session-create-panel">
   <div class="panel-head">
     <h2>Create Session</h2>
     <p class="muted">Start a single TX/RX range-test session draft.</p>
   </div>
-  <form method="post" action="/sessions" class="stack">
-    <label>
+  <form method="post" action="/sessions" class="stack session-create-form">
+    <label class="wide-field">
       <span>Name</span>
       <input type="text" name="name" required placeholder="Field test 2026-03-20" />
     </label>
@@ -35,11 +35,11 @@
       <span>Location</span>
       <input type="text" name="location_text" placeholder="Mountain pass mile 14" />
     </label>
-    <label>
+    <label class="wide-field">
       <span>Initial Notes</span>
       <textarea name="initial_notes" rows="6" placeholder="Operator notes, environment, antenna setup, expected route."></textarea>
     </label>
-    <button type="submit">Create Session</button>
+    <button type="submit" class="wide-field">Create Session</button>
   </form>
 </section>
 {% endblock %}

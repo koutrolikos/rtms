@@ -10,7 +10,8 @@ from server.app.presentation import register_template_helpers
 from server.app.services.parsing import emit_parser_output, merge_session_logs
 from server.app.services.sessions import raw_artifacts as list_raw_artifacts
 from server.app.services.sessions import register_raw_artifact, session_events, session_report, session_roles
-from shared.enums import RawArtifactType, ReportStatus
+from shared.enums import RawArtifactType, ReportStatus, SessionState
+from shared.state_machine import transition_session
 from shared.time_sync import utc_now
 
 
@@ -74,12 +75,14 @@ def generate_report(
     html_path = reports_dir / session.id / "report.html"
     html_path.parent.mkdir(parents=True, exist_ok=True)
     html_path.write_text(rendered, encoding="utf-8")
-    existing.status = ReportStatus.READY.value
+    existing.status = merge.status.value
     existing.html_storage_path = str(html_path.relative_to(storage_root))
     existing.generated_at = utc_now()
     existing.diagnostics_json = merge.model_dump(mode="json")
-    session.merge_status = "ready"
-    session.report_status = ReportStatus.READY.value
+    session.merge_status = "ready" if merge.status == ReportStatus.READY else "failed"
+    session.report_status = merge.status.value
+    if session.status == SessionState.MERGING.value:
+        session.status = transition_session(SessionState(session.status), SessionState.REPORT_READY).value
     db.commit()
     db.refresh(existing)
     return existing

@@ -123,6 +123,13 @@ Install only what the host will do.
 - Flash-capable: `openocd` + correct interface/target configs
 - Capture-capable: external capture tool used by `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` (unless simulated)
 
+Current capture command contract:
+
+- the command must write human RTT text to `{rtt_human_log_path}`
+- the command must write binary `MLOG` RTT frames to `{rtt_machine_log_path}`
+- `{rtt_log_path}` remains a one-transition alias for `{rtt_human_log_path}`
+- the agent captures command stdout/stderr to `{capture_command_log_path}`
+
 Capability flags:
 
 ```bash
@@ -280,6 +287,19 @@ Key env vars:
 - `RANGE_TEST_OPENOCD_TARGET_CFG`
 - `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE`
 
+`RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` should format against these placeholders:
+
+- `{role}`
+- `{session_id}`
+- `{role_run_id}`
+- `{probe_serial}`
+- `{elf_path}`
+- `{duration_seconds}`
+- `{rtt_human_log_path}`
+- `{rtt_machine_log_path}`
+- `{rtt_log_path}` for legacy human-log capture scripts
+- `{capture_command_log_path}`
+
 For STM32G474-based boards, the correct default OpenOCD target script is:
 
 ```bash
@@ -313,8 +333,8 @@ pytest
 
 ## Logging-Spec Integration
 
-When the authoritative firmware logging document arrives:
+When the firmware logging contract changes:
 
-1. Update the parser rules in `server/app/services/parsing.py`.
-2. Update metric computation in the same module.
-3. Add parser fixtures/tests that encode the spec’s exact line formats and expected metrics.
+1. Update the `MLOG` decode rules in `server/app/services/parsing.py`.
+2. Keep report output limited to fields explicitly present in the binary stream.
+3. Add decoder fixtures/tests that encode the exact wire layout and failure cases.

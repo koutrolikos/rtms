@@ -272,51 +272,29 @@
                   </div>
                 </label>
                 <p class="muted" id="build-config-status">Load a commit before queueing the build.</p>
+                <p class="muted">Human-readable RTT is always disabled for these builds. Machine telemetry is always enabled.</p>
                 <div class="grid two">
                   <label>
-                    <span>APP_DEBUG_ENABLE</span>
-                    <select id="build-app-debug-enable">
-                      <option value="1">1</option>
-                      <option value="0">0</option>
+                    <span>Detail Level</span>
+                    <select id="build-machine-log-detail">
+                      <option value="">Default</option>
+                      <option value="0">Summary</option>
+                      <option value="1">Packet</option>
                     </select>
                   </label>
                   <label>
-                    <span>APP_LOG_LEVEL</span>
-                    <select id="build-app-log-level">
-                      <option value="0">0 | Error</option>
-                      <option value="1">1 | Warn</option>
-                      <option value="2">2 | Info</option>
-                      <option value="3">3 | Debug</option>
-                      <option value="4">4 | Trace</option>
-                    </select>
+                    <span>Stat Period (ms)</span>
+                    <input type="number" id="build-machine-log-stat-period-ms" min="0" step="1" placeholder="Default" />
                   </label>
                 </div>
-                <section class="config-block">
-                  <div class="panel-head">
-                    <h4>Channel Selection</h4>
+                <div class="stack">
+                  <div class="build-summary-meta">
+                    <span>Build Summary</span>
+                    <span class="build-summary-badge" aria-hidden="true">System generated</span>
                   </div>
-                  <div class="grid two">
-                    <label><span>Allowlist Hz #1</span><input type="number" id="chsel-allowlist-0" min="1" step="1" /></label>
-                    <label><span>Allowlist Hz #2</span><input type="number" id="chsel-allowlist-1" min="1" step="1" /></label>
-                    <label><span>Band Min Hz</span><input type="number" id="chsel-band-min-hz" min="1" step="1" /></label>
-                    <label><span>Band Max Hz</span><input type="number" id="chsel-band-max-hz" min="1" step="1" /></label>
-                    <label><span>Our Half BW Hz</span><input type="number" id="chsel-our-half-bw-hz" min="0" step="1" /></label>
-                    <label><span>Guard Band Hz</span><input type="number" id="chsel-guard-band-hz" min="0" step="1" /></label>
-                    <label><span>Backup Failover Holdoff ms</span><input type="number" id="chsel-backup-holdoff-ms" min="0" step="1" /></label>
-                  </div>
-                  <div class="build-mask-grid">
-                    {% for index in range(4) %}
-                    <div class="grid two">
-                      <label><span>Mask {{ index + 1 }} Center Hz</span><input type="number" id="chsel-mask-center-{{ index }}" min="0" step="1" /></label>
-                      <label><span>Mask {{ index + 1 }} Half BW Hz</span><input type="number" id="chsel-mask-half-bw-{{ index }}" min="0" step="1" /></label>
-                    </div>
-                    {% endfor %}
-                  </div>
-                </section>
-                <label>
-                  <span>Build Summary</span>
-                  <textarea id="build-config-summary" rows="5" readonly>Load a commit to inspect the resolved session build config.</textarea>
-                </label>
+                  <p class="muted build-summary-note">This preview is not editable. Load a commit to refresh values.</p>
+                  <div id="build-config-summary" class="build-summary-box" role="status" aria-live="polite" aria-readonly="true">Load a commit to inspect the resolved GitHub-build defaults.</div>
+                </div>
                 <button type="submit" id="queue-build-button" disabled>Queue Build</button>
               </form>
             </section>
@@ -687,26 +665,16 @@
   const queueBuildButton = document.getElementById("queue-build-button");
   const statusText = document.getElementById("build-config-status");
   const summaryField = document.getElementById("build-config-summary");
+  const emptySummaryText = "Load a commit to inspect the resolved GitHub-build defaults.";
   const buildConfigJson = document.getElementById("build-config-json");
   const buildRoleSelect = document.getElementById("build-role");
   const buildRoleHint = document.getElementById("build-role-hint");
-  const appDebugEnable = document.getElementById("build-app-debug-enable");
-  const appLogLevel = document.getElementById("build-app-log-level");
-  const allowlistInputs = [
-    document.getElementById("chsel-allowlist-0"),
-    document.getElementById("chsel-allowlist-1"),
-  ];
-  const bandMinHz = document.getElementById("chsel-band-min-hz");
-  const bandMaxHz = document.getElementById("chsel-band-max-hz");
-  const ourHalfBwHz = document.getElementById("chsel-our-half-bw-hz");
-  const guardBandHz = document.getElementById("chsel-guard-band-hz");
-  const backupHoldoffMs = document.getElementById("chsel-backup-holdoff-ms");
-  const exclusionMaskInputs = Array.from({ length: 4 }, (_, index) => ({
-    center: document.getElementById(`chsel-mask-center-${index}`),
-    halfBw: document.getElementById(`chsel-mask-half-bw-${index}`),
-  }));
+  const machineLogDetail = document.getElementById("build-machine-log-detail");
+  const machineLogStatPeriodMs = document.getElementById("build-machine-log-stat-period-ms");
 
   let loadedConfigSha = "";
+  let loadedBuildConfig = null;
+  let loadedBuildConstraints = null;
 
   const setStatus = (message, isError = false) => {
     statusText.textContent = message;
@@ -720,6 +688,14 @@
       throw new Error(payload.detail || `Request failed with status ${response.status}`);
     }
     return payload;
+  };
+
+  const machineLogDetailLabel = (value, constraints = loadedBuildConstraints) => {
+    const option = constraints?.machine_log_detail_options?.find((item) => item.value === value);
+    if (option) {
+      return option.label;
+    }
+    return value === 1 ? "Packet" : "Summary";
   };
 
   const updateBuildTargetUi = () => {
@@ -738,56 +714,71 @@
   };
 
   const renderSummary = (buildConfig, sha) => {
-    summaryField.value = [
-      `git_sha: ${sha}`,
-      `app_debug_enable: ${buildConfig.app_debug_enable}`,
-      `app_log_level: ${buildConfig.app_log_level}`,
-      `chsel.allowlist_hz: ${buildConfig.chsel.allowlist_hz.join(", ")}`,
-      `chsel.band_min_hz: ${buildConfig.chsel.band_min_hz}`,
-      `chsel.band_max_hz: ${buildConfig.chsel.band_max_hz}`,
-      `chsel.our_half_bw_hz: ${buildConfig.chsel.our_half_bw_hz}`,
-      `chsel.guard_band_hz: ${buildConfig.chsel.guard_band_hz}`,
-      `chsel.backup_failover_holdoff_ms: ${buildConfig.chsel.backup_failover_holdoff_ms}`,
-      `chsel.exclusion_masks: ${
-        buildConfig.chsel.exclusion_masks.length
-          ? buildConfig.chsel.exclusion_masks
-              .map((mask, index) => `#${index + 1}(${mask.center_hz}, ${mask.half_bw_hz})`)
-              .join(", ")
-          : "none"
-      }`,
+    summaryField.textContent = [
+      `Git SHA: ${sha}`,
+      "Human log: disabled",
+      "Machine log: enabled",
+      `Detail level: ${machineLogDetailLabel(buildConfig.machine_log_detail)}`,
+      `Stat period: ${buildConfig.machine_log_stat_period_ms} ms`,
     ].join("\n");
   };
 
-  const populateLogLevelOptions = (constraints, selectedValue) => {
-    appLogLevel.innerHTML = "";
-    for (const option of constraints.app_log_level_options) {
+  const populateDetailOptions = (constraints, defaultValue) => {
+    machineLogDetail.innerHTML = "";
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = `Default (${machineLogDetailLabel(defaultValue, constraints)})`;
+    defaultOption.selected = true;
+    machineLogDetail.appendChild(defaultOption);
+    for (const option of constraints.machine_log_detail_options) {
       const element = document.createElement("option");
       element.value = String(option.value);
-      element.textContent = `${option.value} | ${option.label}`;
-      if (option.value === selectedValue) {
-        element.selected = true;
-      }
-      appLogLevel.appendChild(element);
+      element.textContent = option.label;
+      machineLogDetail.appendChild(element);
     }
   };
 
   const populateConfigForm = (payload) => {
-    appDebugEnable.value = String(payload.build_config.app_debug_enable);
-    populateLogLevelOptions(payload.constraints, payload.build_config.app_log_level);
-    allowlistInputs.forEach((input, index) => {
-      input.value = payload.build_config.chsel.allowlist_hz[index] || "";
-    });
-    bandMinHz.value = payload.build_config.chsel.band_min_hz;
-    bandMaxHz.value = payload.build_config.chsel.band_max_hz;
-    ourHalfBwHz.value = payload.build_config.chsel.our_half_bw_hz;
-    guardBandHz.value = payload.build_config.chsel.guard_band_hz;
-    backupHoldoffMs.value = payload.build_config.chsel.backup_failover_holdoff_ms;
-    exclusionMaskInputs.forEach((maskInputs, index) => {
-      const mask = payload.build_config.chsel.exclusion_masks[index];
-      maskInputs.center.value = mask ? mask.center_hz : "";
-      maskInputs.halfBw.value = mask ? mask.half_bw_hz : "";
-    });
+    loadedBuildConfig = payload.build_config;
+    loadedBuildConstraints = payload.constraints;
+    populateDetailOptions(payload.constraints, payload.build_config.machine_log_detail);
+    machineLogStatPeriodMs.value = "";
+    machineLogStatPeriodMs.min = String(payload.constraints.machine_log_stat_period_ms_min ?? 0);
+    machineLogStatPeriodMs.placeholder = String(payload.build_config.machine_log_stat_period_ms);
     renderSummary(payload.build_config, payload.git_sha);
+  };
+
+  const serializeBuildConfig = () => {
+    if (!loadedBuildConfig) {
+      throw new Error("Load config for this SHA first.");
+    }
+    const detailValue = machineLogDetail.value.trim();
+    const statPeriodValue = machineLogStatPeriodMs.value.trim();
+    const effectiveDetail = detailValue === "" ? loadedBuildConfig.machine_log_detail : Number(detailValue);
+    const effectiveStatPeriod =
+      statPeriodValue === "" ? loadedBuildConfig.machine_log_stat_period_ms : Number(statPeriodValue);
+    const minStatPeriod = loadedBuildConstraints?.machine_log_stat_period_ms_min ?? 0;
+    if (!Number.isInteger(effectiveDetail)) {
+      throw new Error("Choose a valid detail level.");
+    }
+    if (!Number.isInteger(effectiveStatPeriod) || effectiveStatPeriod < minStatPeriod) {
+      throw new Error(`Stat period must be at least ${minStatPeriod} ms.`);
+    }
+    return {
+      machine_log_detail: effectiveDetail,
+      machine_log_stat_period_ms: effectiveStatPeriod,
+    };
+  };
+
+  const updateSummaryPreview = () => {
+    if (!loadedBuildConfig) {
+      return;
+    }
+    try {
+      renderSummary(serializeBuildConfig(), loadedConfigSha || gitShaInput.value.trim());
+    } catch (error) {
+      renderSummary(loadedBuildConfig, loadedConfigSha || gitShaInput.value.trim());
+    }
   };
 
   const renderCommitResults = (commits) => {
@@ -806,6 +797,13 @@
         <small>${commit.author_name || "unknown author"} | ${commit.author_date || "-"}</small>
       `;
       button.addEventListener("click", async () => {
+        for (const choice of commitResults.querySelectorAll(".commit-choice")) {
+          if (choice !== button) {
+            choice.remove();
+          }
+        }
+        button.classList.add("is-selected");
+        button.disabled = true;
         gitShaInput.value = commit.sha;
         commitQuery.value = commit.short_sha;
         await loadBuildConfig();
@@ -850,48 +848,11 @@
       setStatus(`Loaded ${payload.git_sha}.`);
     } catch (error) {
       loadedConfigSha = "";
+      loadedBuildConfig = null;
+      loadedBuildConstraints = null;
+      summaryField.textContent = emptySummaryText;
       setStatus(error.message, true);
     }
-  };
-
-  const serializeBuildConfig = () => {
-    const allowlistHz = allowlistInputs
-      .map((input) => input.value.trim())
-      .filter(Boolean)
-      .map((value) => Number(value));
-    if (!allowlistHz.length) {
-      throw new Error("At least one allowlist frequency is required.");
-    }
-
-    const exclusionMasks = [];
-    exclusionMaskInputs.forEach((maskInputs, index) => {
-      const centerValue = maskInputs.center.value.trim();
-      const halfBwValue = maskInputs.halfBw.value.trim();
-      if (!centerValue && !halfBwValue) {
-        return;
-      }
-      if (!centerValue || !halfBwValue) {
-        throw new Error(`Exclusion mask ${index + 1} requires both center and half bandwidth values.`);
-      }
-      exclusionMasks.push({
-        center_hz: Number(centerValue),
-        half_bw_hz: Number(halfBwValue),
-      });
-    });
-
-    return {
-      app_debug_enable: Number(appDebugEnable.value),
-      app_log_level: Number(appLogLevel.value),
-      chsel: {
-        allowlist_hz: allowlistHz,
-        band_min_hz: Number(bandMinHz.value),
-        band_max_hz: Number(bandMaxHz.value),
-        our_half_bw_hz: Number(ourHalfBwHz.value),
-        guard_band_hz: Number(guardBandHz.value),
-        exclusion_masks: exclusionMasks,
-        backup_failover_holdoff_ms: Number(backupHoldoffMs.value),
-      },
-    };
   };
 
   form.addEventListener("submit", (event) => {
@@ -910,8 +871,11 @@
 
   repoSelect.addEventListener("change", () => {
     loadedConfigSha = "";
+    loadedBuildConfig = null;
+    loadedBuildConstraints = null;
     queueBuildButton.disabled = true;
     commitResults.innerHTML = "";
+    summaryField.textContent = emptySummaryText;
     setStatus("Load a commit before queueing the build.");
   });
 
@@ -924,6 +888,8 @@
   if (buildRoleSelect) {
     buildRoleSelect.addEventListener("change", updateBuildTargetUi);
   }
+  machineLogDetail.addEventListener("change", updateSummaryPreview);
+  machineLogStatPeriodMs.addEventListener("input", updateSummaryPreview);
   searchCommitsButton.addEventListener("click", searchCommits);
   loadConfigButton.addEventListener("click", loadBuildConfig);
   updateBuildTargetUi();

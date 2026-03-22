@@ -13,8 +13,6 @@ from shared.schemas import (
     BuildRecipe,
     ConfiguredRepo,
     HighAltitudeCCBuildConfig,
-    HighAltitudeCCChannelSelectionConfig,
-    HighAltitudeCCExclusionMask,
     RawArtifactUploadResult,
 )
 from shared.time_sync import utc_now
@@ -169,19 +167,8 @@ def _high_altitude_cc_payload() -> BuildArtifactPayload:
             ),
         ),
         build_config=HighAltitudeCCBuildConfig(
-            app_debug_enable=0,
-            app_log_level=2,
-            chsel=HighAltitudeCCChannelSelectionConfig(
-                allowlist_hz=[433200000, 434600000],
-                band_min_hz=433050000,
-                band_max_hz=434790000,
-                our_half_bw_hz=108500,
-                guard_band_hz=30000,
-                exclusion_masks=[
-                    HighAltitudeCCExclusionMask(center_hz=433920000, half_bw_hz=25000),
-                ],
-                backup_failover_holdoff_ms=15000,
-            ),
+            machine_log_detail=1,
+            machine_log_stat_period_ms=5000,
         ),
     )
 
@@ -193,11 +180,10 @@ def test_resolve_build_command_adds_high_altitude_cc_cdefs() -> None:
 
     assert command.startswith("range-test-agent build-high-altitude-cc --source . --build-dir build/debug --role rx --build-config-json ")
     assert "-DAPP_ROLE_MODE=APP_ROLE_MODE_RX" in cdefs
-    assert "-DAPP_DEBUG_ENABLE=0" in cdefs
-    assert "-DAPP_LOG_LEVEL=2" in cdefs
-    assert "-DAPP_CHSEL_ALLOWLIST_COUNT=2U" in cdefs
-    assert "-DAPP_CHSEL_EXCLUSION_MASK_COUNT=1U" in cdefs
-    assert "-DAPP_CHSEL_EXCLUSION_MASK1_CENTER_HZ=0UL" in cdefs
+    assert "-DAPP_HUMAN_LOG_ENABLE=0" in cdefs
+    assert "-DAPP_MACHINE_LOG_ENABLE=1" in cdefs
+    assert "-DAPP_MACHINE_LOG_DETAIL=1" in cdefs
+    assert "-DAPP_MACHINE_LOG_STAT_PERIOD_MS=5000U" in cdefs
 
 
 def test_run_build_uploads_build_log_and_cleans_workspace(tmp_path: Path) -> None:

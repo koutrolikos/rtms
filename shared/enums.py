@@ -83,6 +83,7 @@ class ArtifactStatus(StrEnum):
 
 class RawArtifactType(StrEnum):
     RTT_LOG = "rtt_log"
+    RTT_MACHINE_LOG = "rtt_machine_log"
     OPENOCD_LOG = "openocd_log"
     AGENT_EVENT_LOG = "agent_event_log"
     TIMING_SAMPLES = "timing_samples"

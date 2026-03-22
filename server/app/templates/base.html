@@ -7,21 +7,46 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&family=Orbitron:wght@500..900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/style.css" />
+    <script>
+      (() => {
+        try {
+          const stored = window.localStorage.getItem("rtms-theme");
+          const prefersDark =
+            typeof window.matchMedia === "function" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.dataset.theme =
+            stored === "dark" || stored === "light" ? stored : prefersDark ? "dark" : "light";
+        } catch (_error) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/static/style.css?v=20260322a" />
   </head>
   <body>
     <header class="topbar">
-      <div class="topbar-brand">
-        <p class="eyebrow">Range Test Management Server</p>
-        <h1><a href="/hosts">RTMS</a></h1>
+      <h1 class="topbar-title"><a href="/hosts">RTMS</a></h1>
+      <div class="topbar-actions">
+        <nav class="topbar-nav">
+          <a href="/hosts" class="{% if request.url.path == '/hosts' or request.url.path == '/' %}active{% endif %}">Hosts</a>
+          <a href="/sessions/new" class="{% if request.url.path == '/sessions/new' %}active{% endif %}">New Session</a>
+        </nav>
+        <button
+          type="button"
+          class="theme-toggle"
+          id="theme-toggle"
+          aria-label="Toggle dark mode"
+          aria-pressed="false"
+        >
+          <span class="theme-toggle-label">🌙</span>
+          <span class="theme-toggle-track" aria-hidden="true">
+            <span class="theme-toggle-knob"></span>
+          </span>
+        </button>
       </div>
-      <nav class="topbar-nav">
-        <a href="/hosts" class="{% if request.url.path == '/hosts' or request.url.path == '/' %}active{% endif %}">Hosts</a>
-        <a href="/sessions/new" class="{% if request.url.path == '/sessions/new' %}active{% endif %}">New Session</a>
-      </nav>
     </header>
     <main class="page">
       {% block content %}{% endblock %}
@@ -46,6 +71,32 @@
         };
 
         window.rtmsShowToast = showToast;
+        const root = document.documentElement;
+        const themeToggle = document.getElementById("theme-toggle");
+
+        const setTheme = (theme, persist = true) => {
+          root.dataset.theme = theme;
+          if (themeToggle instanceof HTMLButtonElement) {
+            themeToggle.setAttribute("aria-pressed", String(theme === "dark"));
+            themeToggle.setAttribute("title", theme === "dark" ? "Switch to light mode" : "Switch to dark mode");
+          }
+          if (!persist) {
+            return;
+          }
+          try {
+            window.localStorage.setItem("rtms-theme", theme);
+          } catch (_error) {
+            return;
+          }
+        };
+
+        setTheme(root.dataset.theme === "dark" ? "dark" : "light", false);
+
+        if (themeToggle instanceof HTMLButtonElement) {
+          themeToggle.addEventListener("click", () => {
+            setTheme(root.dataset.theme === "dark" ? "light" : "dark");
+          });
+        }
 
         const fallbackCopy = async (text) => {
           const probe = document.createElement("textarea");

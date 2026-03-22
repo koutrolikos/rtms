@@ -175,13 +175,13 @@ class AgentRuntime:
             (context.timing_samples_path, RawArtifactType.TIMING_SAMPLES),
         ):
             if path and Path(path).exists():
-                    self.client.upload_raw_artifact(
-                        path=Path(path),
-                        session_id=payload.session_id,
-                        artifact_type=artifact_type,
-                        role=payload.role,
-                        metadata={"stage": "prepare"},
-                    )
+                self.client.upload_raw_artifact(
+                    path=Path(path),
+                    session_id=payload.session_id,
+                    artifact_type=artifact_type,
+                    role=payload.role,
+                    metadata={"stage": "prepare"},
+                )
 
     def _collect_finished_captures(self) -> None:
         finished: list[str] = []
@@ -192,7 +192,8 @@ class AgentRuntime:
             context = capture.context
             upload_error: Exception | None = None
             for path, artifact_type in (
-                (capture.rtt_log_path, RawArtifactType.RTT_LOG),
+                (capture.rtt_human_log_path, RawArtifactType.RTT_LOG),
+                (capture.rtt_machine_log_path, RawArtifactType.RTT_MACHINE_LOG),
                 (Path(context.event_log_path) if context.event_log_path else None, RawArtifactType.AGENT_EVENT_LOG),
                 (Path(context.timing_samples_path) if context.timing_samples_path else None, RawArtifactType.TIMING_SAMPLES),
             ):

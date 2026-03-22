@@ -166,6 +166,13 @@ Install only what you need for the capabilities enabled on that host.
 - Flash-capable agent: `openocd` plus correct target/interface scripts
 - Capture-capable agent: tool referenced by `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` (if not simulating capture)
 
+Current capture command contract:
+
+- write human RTT text to `{rtt_human_log_path}`
+- write binary `MLOG` RTT data to `{rtt_machine_log_path}`
+- `{rtt_log_path}` remains a compatibility alias for `{rtt_human_log_path}`
+- stdout/stderr are captured by the agent to `{capture_command_log_path}`
+
 Minimal capability env vars:
 
 ```bash

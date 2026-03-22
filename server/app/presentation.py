@@ -157,14 +157,20 @@ def summarize_job_diagnostics(job_type: Any, diagnostics: dict[str, Any] | None)
     if payload.get("capture_mode"):
         lines.append(f"Capture mode {humanize_token(payload['capture_mode'])}")
 
-    for key, label in (
+    path_labels = [
         ("bundle_path", "Bundle"),
         ("build_log_path", "Build log"),
         ("openocd_log_path", "OpenOCD log"),
-        ("rtt_log_path", "RTT log"),
+        ("rtt_human_log_path", "RTT human log"),
+        ("rtt_machine_log_path", "RTT machine log"),
+        ("capture_command_log_path", "Capture command log"),
         ("event_log_path", "Agent events"),
         ("timing_samples_path", "Timing samples"),
-    ):
+    ]
+    if not payload.get("rtt_human_log_path") and payload.get("rtt_log_path"):
+        path_labels.append(("rtt_log_path", "RTT log"))
+
+    for key, label in path_labels:
         if payload.get(key):
             lines.append(f"{label} {basename(payload[key])}")
 
@@ -278,33 +284,17 @@ def _summarize_build_metadata(build_metadata: dict[str, Any]) -> list[str]:
 def _summarize_build_config(build_config: dict[str, Any]) -> list[str]:
     lines: list[str] = []
     header: list[str] = []
-    if build_config.get("app_debug_enable") is not None:
-        header.append(f"Debug {build_config['app_debug_enable']}")
-    if build_config.get("app_log_level") is not None:
-        header.append(f"Log {build_config['app_log_level']}")
+    detail_labels = {
+        0: "Summary",
+        1: "Packet",
+    }
+    machine_log_detail = build_config.get("machine_log_detail")
+    if machine_log_detail is not None:
+        header.append(f"Detail {detail_labels.get(machine_log_detail, machine_log_detail)}")
+    if build_config.get("machine_log_stat_period_ms") is not None:
+        header.append(f"Stat period {build_config['machine_log_stat_period_ms']} ms")
     if header:
         lines.append("Config " + " | ".join(header))
-
-    chsel = build_config.get("chsel") or {}
-    if isinstance(chsel, dict):
-        allowlist_hz = chsel.get("allowlist_hz") or []
-        if allowlist_hz:
-            joined = ", ".join(str(item) for item in allowlist_hz)
-            lines.append(f"Allowlist {joined}")
-        band_min_hz = chsel.get("band_min_hz")
-        band_max_hz = chsel.get("band_max_hz")
-        if band_min_hz is not None and band_max_hz is not None:
-            lines.append(f"Band {band_min_hz} - {band_max_hz} Hz")
-        mask_count = len(chsel.get("exclusion_masks") or [])
-        backup_holdoff_ms = chsel.get("backup_failover_holdoff_ms")
-        detail_parts: list[str] = []
-        if mask_count:
-            label = "mask" if mask_count == 1 else "masks"
-            detail_parts.append(f"{mask_count} {label}")
-        if backup_holdoff_ms is not None:
-            detail_parts.append(f"Holdoff {backup_holdoff_ms} ms")
-        if detail_parts:
-            lines.append(" | ".join(detail_parts))
     return lines
 
 

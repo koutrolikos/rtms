@@ -2,17 +2,31 @@
 {% block title %}Report{% endblock %}
 {% block content %}
 {% from "_summary.html" import render_copy_value %}
-<section class="panel">
-  <div class="panel-head">
-    <div>
-      <h2>HTML Report</h2>
-      <div class="panel-inline-meta">
-        <span class="hero-meta-label">Session ID</span>
-        {{ render_copy_value(session.id, session.id, "session id") }}
+<section class="report-page">
+  <section class="hero report-page-hero">
+    <div class="report-page-hero-main">
+      <p class="eyebrow">Report</p>
+      <h2>{{ session.name }}</h2>
+      <div class="hero-meta report-page-hero-meta">
+        <div class="hero-meta-item report-page-hero-item report-page-hero-item-id">
+          <span class="hero-meta-label">Session ID</span>
+          {{ render_copy_value(session.id, session.id, "session id", true) }}
+        </div>
+        <div class="hero-meta-item report-page-hero-item">
+          <span class="hero-meta-label">Status</span>
+          <span>{{ session.status | humanize_token }}</span>
+        </div>
+        <div class="hero-meta-item report-page-hero-item">
+          <span class="hero-meta-label">Window</span>
+          <span>{{ session.started_at or "-" }} to {{ session.ended_at or "-" }}</span>
+        </div>
       </div>
     </div>
-    <a class="button secondary" href="/sessions/{{ session.id }}">Back to Session</a>
-  </div>
+    <div class="hero-status report-page-hero-status">
+      <a class="button secondary" href="/sessions/{{ session.id }}">Back to Session</a>
+    </div>
+  </section>
+
   <div class="report-shell">
     {{ report_html | safe }}
   </div>

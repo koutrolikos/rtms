@@ -1,137 +1,327 @@
 {% from "_summary.html" import render_summary %}
+{% set tx_host = host_labels.get(session.tx_agent_id, session.tx_agent_id) if session.tx_agent_id else "n/a" %}
+{% set rx_host = host_labels.get(session.rx_agent_id, session.rx_agent_id) if session.rx_agent_id else "n/a" %}
+{% set tx_artifact = session.tx_artifact_id | short_id if session.tx_artifact_id else "no artifact" %}
+{% set rx_artifact = session.rx_artifact_id | short_id if session.rx_artifact_id else "no artifact" %}
+{% set tx_report = merge.roles.get("TX") %}
+{% set rx_report = merge.roles.get("RX") %}
 <section class="report">
-  <header class="report-header">
-    <p class="eyebrow">Session Report</p>
-    <h2>{{ session.name }}</h2>
-    <p class="muted">Status: {{ session.status | humanize_token }} | Started: {{ session.started_at }} | Ended: {{ session.ended_at }}</p>
-  </header>
-
-  <section class="panel">
-    <h3>Summary</h3>
-    <dl class="meta">
-      <div><dt>TX Host</dt><dd>{{ host_labels.get(session.tx_agent_id, session.tx_agent_id) if session.tx_agent_id else "n/a" }}</dd></div>
-      <div><dt>RX Host</dt><dd>{{ host_labels.get(session.rx_agent_id, session.rx_agent_id) if session.rx_agent_id else "n/a" }}</dd></div>
-      <div><dt>TX Artifact</dt><dd>{{ session.tx_artifact_id | short_id if session.tx_artifact_id else "n/a" }}</dd></div>
-      <div><dt>RX Artifact</dt><dd>{{ session.rx_artifact_id | short_id if session.rx_artifact_id else "n/a" }}</dd></div>
-      <div><dt>Location</dt><dd>{{ session.location_text or "n/a" }}</dd></div>
-      <div><dt>Notes</dt><dd>{{ session.initial_notes or "-" }}</dd></div>
-    </dl>
-  </section>
-
-  <section class="panel">
-    <h3>Metrics</h3>
-    <div class="table-shell">
-      <table>
-        <thead><tr><th>Metric</th><th>Value</th></tr></thead>
-        <tbody>
-          {% for key, value in merge.metrics.items() %}
-          <tr><td>{{ key | humanize_token }}</td><td>{{ value }}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="panel">
-    <h3>Anomalies</h3>
-    <ul class="timeline">
-      {% for item in merge.anomalies %}
-      <li>{{ item }}</li>
-      {% else %}
-      <li class="muted">No anomalies detected by the baseline parser.</li>
-      {% endfor %}
-    </ul>
-  </section>
-
-  <section class="panel">
-    <h3>Parse Diagnostics</h3>
-    <p class="muted">Compatibility-mode parser. Replace parser rules with the authoritative logging spec when provided.</p>
-    <div class="grid two">
-      {% for role, correction in merge.correction_diagnostics.items() %}
-      <article class="config-block">
-        <div class="panel-head">
-          <h4>{{ role }} Time Correction</h4>
-        </div>
-        {{ render_summary(summarize_time_correction(correction), "No correction details.") }}
+  <section class="report-screen">
+    <section class="overview-strip report-overview-strip">
+      <article class="overview-card">
+        <span class="overview-label">Session Status</span>
+        <span class="overview-value">{{ session.status | humanize_token }}</span>
+        <span class="overview-meta">{{ session.started_at or "Not started" }}</span>
       </article>
+      <article class="overview-card">
+        <span class="overview-label">Report Status</span>
+        <span class="overview-value">{{ merge.status | humanize_token }}</span>
+        <span class="overview-meta">{{ raw_artifacts | length }} artifacts</span>
+      </article>
+      <article class="overview-card">
+        <span class="overview-label">TX</span>
+        <span class="overview-value">{{ tx_host }}</span>
+        <span class="overview-meta">{{ tx_artifact }}</span>
+      </article>
+      <article class="overview-card">
+        <span class="overview-label">RX</span>
+        <span class="overview-value">{{ rx_host }}</span>
+        <span class="overview-meta">{{ rx_artifact }}</span>
+      </article>
+    </section>
+
+    <section class="report-primary-grid">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Session</h3>
+        </div>
+        <dl class="meta report-session-meta">
+          <div><dt>Location</dt><dd>{{ session.location_text or "n/a" }}</dd></div>
+          <div><dt>Started</dt><dd>{{ session.started_at or "-" }}</dd></div>
+          <div><dt>Ended</dt><dd>{{ session.ended_at or "-" }}</dd></div>
+          <div><dt>Initial Notes</dt><dd>{{ session.initial_notes or "-" }}</dd></div>
+          <div><dt>Final Notes</dt><dd>{{ session.final_notes or "-" }}</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Decode Diagnostics</h3>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead><tr><th>Role</th><th>Code</th><th>Artifact</th><th>Offset</th><th>Message</th></tr></thead>
+            <tbody>
+              {% for item in merge.decode_diagnostics %}
+              <tr>
+                <td>{{ item.role.value if item.role else "session" }}</td>
+                <td>{{ item.code | humanize_token }}</td>
+                <td>{{ item.artifact_path | basename if item.artifact_path else "-" }}</td>
+                <td>{{ item.offset if item.offset is not none else "-" }}</td>
+                <td>{{ item.message }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="5" class="muted">No decode diagnostics.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    {% for role_key, role_report in [("TX", tx_report), ("RX", rx_report)] %}
+    <section class="panel">
+      <div class="panel-head">
+        <h3>{{ role_key }} Run Snapshot</h3>
+      </div>
+      {% if role_report and role_report.run %}
+      {% set run = role_report.run %}
+      <div class="table-shell">
+        <table>
+          <thead><tr><th>Field</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>t ms</td><td>{{ run.t_ms }}</td></tr>
+            <tr><td>Detail</td><td>{{ run.machine_detail }} ({{ run.machine_detail_code }})</td></tr>
+            <tr><td>Build</td><td>{{ run.build }} ({{ run.build_code }})</td></tr>
+            <tr><td>Channel state</td><td>{{ run.channel_state }} ({{ run.channel_state_code }})</td></tr>
+            <tr><td>Human log level</td><td>{{ run.human_log_level }}</td></tr>
+            <tr><td>Human log enable</td><td>{{ run.human_log_enable }}</td></tr>
+            <tr><td>Machine log enable</td><td>{{ run.machine_log_enable }}</td></tr>
+            <tr><td>Active slot</td><td>{{ run.active_slot }}</td></tr>
+            <tr><td>Active frequency Hz</td><td>{{ run.active_freq_hz }}</td></tr>
+            <tr><td>Backup slot</td><td>{{ run.backup_slot }}</td></tr>
+            <tr><td>Backup frequency Hz</td><td>{{ run.backup_freq_hz }}</td></tr>
+            <tr><td>RF bitrate bps</td><td>{{ run.rf_bitrate_bps }}</td></tr>
+            <tr><td>Machine stat period ms</td><td>{{ run.machine_log_stat_period_ms }}</td></tr>
+            {% if role_key == "TX" %}
+            <tr><td>Airtime limit us</td><td>{{ run.airtime_limit_us }}</td></tr>
+            <tr><td>GPS telemetry period ms</td><td>{{ run.telem_gps_period_ms }}</td></tr>
+            <tr><td>IMU/baro telemetry period ms</td><td>{{ run.telem_imu_baro_period_ms }}</td></tr>
+            <tr><td>TX complete timeout ms</td><td>{{ run.tx_complete_timeout_ms }}</td></tr>
+            {% else %}
+            <tr><td>RX threshold enable</td><td>{{ run.rx_thresh_enable }}</td></tr>
+            <tr><td>RX min RSSI dBm</td><td>{{ run.rx_min_rssi_dbm }}</td></tr>
+            <tr><td>RX min LQI</td><td>{{ run.rx_min_lqi }}</td></tr>
+            <tr><td>RX poll interval ms</td><td>{{ run.rx_poll_interval_ms }}</td></tr>
+            <tr><td>Host bridge budget count</td><td>{{ run.rx_host_bridge_budget_count }}</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
       {% else %}
-      <p class="muted">No time-correction diagnostics captured.</p>
-      {% endfor %}
-    </div>
-    <div class="stack">
-      <h4>Parse Errors</h4>
-      <ul class="timeline">
-        {% for error in merge.parse_errors %}
-        <li>{{ error }}</li>
+      <p class="muted">No decoded run snapshot for {{ role_key }}.</p>
+      {% endif %}
+    </section>
+
+    <section class="report-secondary-grid">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>{{ role_key }} Final Stat</h3>
+        </div>
+        {% if role_report and role_report.final_stat %}
+        {% set stat = role_report.final_stat %}
+        <div class="table-shell">
+          <table>
+            <thead><tr><th>Field</th><th>Value</th></tr></thead>
+            <tbody>
+              <tr><td>t ms</td><td>{{ stat.t_ms }}</td></tr>
+              {% if role_key == "TX" %}
+              <tr><td>Attempts</td><td>{{ stat.attempt_count }}</td></tr>
+              <tr><td>Queued</td><td>{{ stat.queued_count }}</td></tr>
+              <tr><td>Completed</td><td>{{ stat.completed_count }}</td></tr>
+              <tr><td>GPS queued</td><td>{{ stat.gps_queued_count }}</td></tr>
+              <tr><td>GPS completed</td><td>{{ stat.gps_completed_count }}</td></tr>
+              <tr><td>IMU/baro queued</td><td>{{ stat.imu_baro_queued_count }}</td></tr>
+              <tr><td>IMU/baro completed</td><td>{{ stat.imu_baro_completed_count }}</td></tr>
+              <tr><td>Other queued</td><td>{{ stat.other_queued_count }}</td></tr>
+              <tr><td>Other completed</td><td>{{ stat.other_completed_count }}</td></tr>
+              <tr><td>Busy</td><td>{{ stat.busy_count }}</td></tr>
+              <tr><td>Airtime reject</td><td>{{ stat.airtime_reject_count }}</td></tr>
+              <tr><td>Send fail</td><td>{{ stat.send_fail_count }}</td></tr>
+              <tr><td>Timeout</td><td>{{ stat.timeout_count }}</td></tr>
+              <tr><td>Max completion latency ms</td><td>{{ stat.max_complete_latency_ms }}</td></tr>
+              <tr><td>Last completion latency ms</td><td>{{ stat.last_complete_latency_ms }}</td></tr>
+              <tr><td>Max schedule lag ms</td><td>{{ stat.max_schedule_lag_ms }}</td></tr>
+              <tr><td>Airtime used us</td><td>{{ stat.airtime_used_us }}</td></tr>
+              <tr><td>Airtime limit us</td><td>{{ stat.airtime_limit_us }}</td></tr>
+              {% else %}
+              <tr><td>RX ok</td><td>{{ stat.rx_ok_count }}</td></tr>
+              <tr><td>Accepted</td><td>{{ stat.accepted_count }}</td></tr>
+              <tr><td>Rejected</td><td>{{ stat.rejected_count }}</td></tr>
+              <tr><td>CRC fail</td><td>{{ stat.rx_crc_fail_count }}</td></tr>
+              <tr><td>Partial</td><td>{{ stat.rx_partial_count }}</td></tr>
+              <tr><td>Overflow</td><td>{{ stat.rx_overflow_count }}</td></tr>
+              <tr><td>Filtered total</td><td>{{ stat.filtered_total_count }}</td></tr>
+              <tr><td>Filtered RSSI only</td><td>{{ stat.filtered_rssi_only_count }}</td></tr>
+              <tr><td>Filtered LQI only</td><td>{{ stat.filtered_lqi_only_count }}</td></tr>
+              <tr><td>Filtered both</td><td>{{ stat.filtered_both_count }}</td></tr>
+              <tr><td>Poll recovery</td><td>{{ stat.poll_recovery_count }}</td></tr>
+              <tr><td>SPI backpressure</td><td>{{ stat.spi_backpressure_count }}</td></tr>
+              <tr><td>RX FIFO overwrite</td><td>{{ stat.rx_fifo_overwrite_count }}</td></tr>
+              <tr><td>RX FIFO depth</td><td>{{ stat.rx_fifo_depth_count }}</td></tr>
+              <tr><td>SPI queue depth</td><td>{{ stat.spi_queue_depth_count }}</td></tr>
+              <tr><td>RX FIFO high-water mark</td><td>{{ stat.rx_fifo_hwm }}</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
         {% else %}
-        <li class="muted">No parse errors recorded.</li>
-        {% endfor %}
-      </ul>
-    </div>
-  </section>
+        <p class="muted">No decoded stat frames for {{ role_key }}.</p>
+        {% endif %}
+      </section>
 
-  <section class="panel">
-    <h3>Merged Timeline</h3>
-    <div class="table-shell">
-      <table>
-        <thead>
-          <tr>
-            <th>Corrected Timestamp</th>
-            <th>Role</th>
-            <th>Event</th>
-            <th>Seq</th>
-            <th>Raw Line</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for event in merge.merged_events %}
-          <tr>
-            <td>{{ event.corrected_timestamp or "-" }}</td>
-            <td>{{ event.role.value if event.role else "session" }}</td>
-            <td>{{ event.event_name | humanize_token }}</td>
-            <td>{{ event.packet_sequence or "-" }}</td>
-            <td><div class="mono-wrap">{{ event.raw_line }}</div></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h3>{{ role_key }} Artifact</h3>
+        </div>
+        {% if role_report and role_report.machine_artifact_path %}
+        <dl class="meta report-session-meta">
+          <div><dt>Machine log</dt><dd>{{ role_report.machine_artifact_path | basename }}</dd></div>
+          <div><dt>Size</dt><dd>{{ role_report.machine_artifact_size_bytes | human_bytes if role_report.machine_artifact_size_bytes is not none else "-" }}</dd></div>
+        </dl>
+        {% else %}
+        <p class="muted">No machine artifact registered for {{ role_key }}.</p>
+        {% endif %}
+      </section>
+    </section>
 
-  <section class="panel">
-    <h3>Raw Artifacts</h3>
-    <div class="table-shell">
-      <table>
-        <thead><tr><th>Type</th><th>Role</th><th>Path</th></tr></thead>
-        <tbody>
-          {% for item in raw_artifacts %}
-          <tr>
-            <td>{{ item.type | humanize_token }}</td>
-            <td>{{ item.role or "session" }}</td>
-            <td>{{ item.storage_path | basename }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+    <section class="report-secondary-grid">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>{{ role_key }} Packet Records</h3>
+        </div>
+        {% if role_report and role_report.packet_frames %}
+        <div class="table-shell">
+          <table>
+            <thead>
+              {% if role_key == "TX" %}
+              <tr><th>t ms</th><th>Stream</th><th>Type</th><th>Seq</th><th>Length</th><th>Completion Latency</th><th>Schedule Lag</th></tr>
+              {% else %}
+              <tr><th>t ms</th><th>Stream</th><th>Type</th><th>Seq</th><th>Length</th><th>Accepted</th><th>Drop Reason</th><th>RSSI</th><th>LQI</th><th>CRC</th></tr>
+              {% endif %}
+            </thead>
+            <tbody>
+              {% for frame in role_report.packet_frames %}
+              <tr>
+                <td>{{ frame.t_ms }}</td>
+                <td>{{ frame.stream_id }} ({{ frame.stream_id_code }})</td>
+                <td>{{ frame.type_id }} ({{ frame.type_id_code }})</td>
+                <td>{{ frame.seq }}</td>
+                <td>{{ frame.length }}</td>
+                {% if role_key == "TX" %}
+                <td>{{ frame.complete_latency_ms }}</td>
+                <td>{{ frame.schedule_lag_ms }}</td>
+                {% else %}
+                <td>{{ frame.accepted }}</td>
+                <td>{{ frame.drop_reason }} ({{ frame.drop_reason_code }})</td>
+                <td>{{ frame.rssi_dbm }}</td>
+                <td>{{ frame.lqi }}</td>
+                <td>{{ frame.crc }}</td>
+                {% endif %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="muted">No decoded packet frames for {{ role_key }}.</p>
+        {% endif %}
+      </section>
 
-  <section class="panel">
-    <h3>Session Event Audit</h3>
-    <div class="table-shell">
-      <table>
-        <thead><tr><th>Timestamp</th><th>Source</th><th>Type</th><th>Summary</th></tr></thead>
-        <tbody>
-          {% for item in events %}
-          <tr>
-            <td>{{ item.corrected_timestamp or item.created_at }}</td>
-            <td>{{ describe_source(item.source_type, item.source_ref, host_labels) }}</td>
-            <td>{{ item.event_type | humanize_token }}</td>
-            <td>{{ render_summary(summarize_event_payload(item.event_type, item.payload_json)) }}</td>
-          </tr>
+      <section class="panel">
+        <div class="panel-head">
+          <h3>{{ role_key }} Operational Events</h3>
+        </div>
+        {% if role_report and role_report.event_frames %}
+        <div class="table-shell">
+          <table>
+            <thead><tr><th>t ms</th><th>Event</th><th>State</th><th>Reason</th><th>Details</th></tr></thead>
+            <tbody>
+              {% for frame in role_report.event_frames %}
+              <tr>
+                <td>{{ frame.t_ms }}</td>
+                <td>{{ frame.event_id }} ({{ frame.event_id_code }})</td>
+                <td>{{ frame.state }} ({{ frame.state_code }})</td>
+                <td>{{ frame.reason }} ({{ frame.reason_code }})</td>
+                <td>
+                  {% if frame.active_slot is not none %}
+                  active={{ frame.active_slot }} / {{ frame.active_freq_hz }}, backup={{ frame.backup_slot }} / {{ frame.backup_freq_hz }}
+                  {% elif frame.stream_id is not none %}
+                  stream={{ frame.stream_id }} ({{ frame.stream_id_code }}), type={{ frame.type_id }} ({{ frame.type_id_code }}), seq={{ frame.seq }}, len={{ frame.length }}, elapsed={{ frame.elapsed_ms }}
+                  {% else %}
+                  -
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="muted">No decoded operational events for {{ role_key }}.</p>
+        {% endif %}
+      </section>
+    </section>
+    {% endfor %}
+
+    <section class="report-secondary-grid">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Annotations</h3>
+        </div>
+        <ul class="timeline">
+          {% for item in merge.annotations %}
+          <li>{{ item.created_at }} | {{ item.text }}</li>
+          {% else %}
+          <li class="muted">No annotations.</li>
           {% endfor %}
-        </tbody>
-      </table>
-    </div>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Raw Artifacts</h3>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead><tr><th>Type</th><th>Role</th><th>Path</th></tr></thead>
+            <tbody>
+              {% for item in raw_artifacts %}
+              <tr>
+                <td>{{ item.type | humanize_token }}</td>
+                <td>{{ item.role or "session" }}</td>
+                <td>{{ item.storage_path | basename }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="3" class="muted">No artifacts.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>Session Event Audit</h3>
+      </div>
+      <div class="table-shell">
+        <table>
+          <thead><tr><th>Timestamp</th><th>Source</th><th>Type</th><th>Summary</th></tr></thead>
+          <tbody>
+            {% for item in merge.session_events %}
+            <tr>
+              <td>{{ item.corrected_timestamp or item.local_timestamp or "-" }}</td>
+              <td>{{ describe_source(item.source_type, item.source_ref, host_labels) }}</td>
+              <td>{{ item.event_type | humanize_token }}</td>
+              <td>{{ render_summary(summarize_event_payload(item.event_type, item.payload)) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="muted">No session events.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
   </section>
 </section>

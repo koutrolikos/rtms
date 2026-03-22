@@ -70,9 +70,8 @@ class HighAltitudeCCChannelSelectionConfig(BaseModel):
 
 
 class HighAltitudeCCBuildConfig(BaseModel):
-    app_debug_enable: int = Field(ge=0, le=1)
-    app_log_level: int = Field(ge=0, le=4)
-    chsel: HighAltitudeCCChannelSelectionConfig
+    machine_log_detail: int = Field(ge=0, le=1)
+    machine_log_stat_period_ms: int = Field(ge=0)
 
 
 class IntegerChoice(BaseModel):
@@ -81,20 +80,13 @@ class IntegerChoice(BaseModel):
 
 
 class HighAltitudeCCBuildConfigConstraints(BaseModel):
-    app_debug_enable_values: list[int] = Field(default_factory=lambda: [0, 1])
-    app_log_level_options: list[IntegerChoice] = Field(
+    machine_log_detail_options: list[IntegerChoice] = Field(
         default_factory=lambda: [
-            IntegerChoice(value=0, label="Error"),
-            IntegerChoice(value=1, label="Warn"),
-            IntegerChoice(value=2, label="Info"),
-            IntegerChoice(value=3, label="Debug"),
-            IntegerChoice(value=4, label="Trace"),
+            IntegerChoice(value=0, label="Summary"),
+            IntegerChoice(value=1, label="Packet"),
         ]
     )
-    allowlist_count_min: int = 1
-    allowlist_count_max: int = 2
-    exclusion_mask_count_min: int = 0
-    exclusion_mask_count_max: int = 4
+    machine_log_stat_period_ms_min: int = 0
 
 
 class RepoBuildConfigResponse(BaseModel):
@@ -298,10 +290,149 @@ class ParsedEvent(BaseModel):
     parse_error: str | None = None
 
 
+class ReportAnnotation(BaseModel):
+    created_at: datetime
+    text: str
+    author: str | None = None
+
+
+class MachineDecodeDiagnostic(BaseModel):
+    role: Role | None = None
+    artifact_id: str | None = None
+    artifact_path: str | None = None
+    offset: int | None = None
+    code: str
+    message: str
+
+
+class MachineFrameBase(BaseModel):
+    role: Role
+    role_code: int
+    kind: str
+    kind_code: int
+    t_ms: int = Field(ge=0)
+    version: int = 1
+    flags: int = 0
+    payload_len: int = Field(ge=0)
+    offset: int = Field(ge=0)
+
+
+class MachineRunFrame(MachineFrameBase):
+    machine_detail: str
+    machine_detail_code: int
+    build: str
+    build_code: int
+    channel_state: str
+    channel_state_code: int
+    human_log_level: int
+    human_log_enable: bool
+    machine_log_enable: bool
+    active_slot: int
+    active_freq_hz: int
+    backup_slot: int
+    backup_freq_hz: int
+    rf_bitrate_bps: int
+    machine_log_stat_period_ms: int
+    airtime_limit_us: int | None = None
+    telem_gps_period_ms: int | None = None
+    telem_imu_baro_period_ms: int | None = None
+    tx_complete_timeout_ms: int | None = None
+    rx_thresh_enable: bool | None = None
+    rx_min_rssi_dbm: int | None = None
+    rx_min_lqi: int | None = None
+    rx_poll_interval_ms: int | None = None
+    rx_host_bridge_budget_count: int | None = None
+
+
+class MachineStatFrame(MachineFrameBase):
+    attempt_count: int | None = None
+    queued_count: int | None = None
+    completed_count: int | None = None
+    gps_queued_count: int | None = None
+    gps_completed_count: int | None = None
+    imu_baro_queued_count: int | None = None
+    imu_baro_completed_count: int | None = None
+    other_queued_count: int | None = None
+    other_completed_count: int | None = None
+    busy_count: int | None = None
+    airtime_reject_count: int | None = None
+    send_fail_count: int | None = None
+    timeout_count: int | None = None
+    max_complete_latency_ms: int | None = None
+    last_complete_latency_ms: int | None = None
+    max_schedule_lag_ms: int | None = None
+    airtime_used_us: int | None = None
+    airtime_limit_us: int | None = None
+    rx_ok_count: int | None = None
+    accepted_count: int | None = None
+    rejected_count: int | None = None
+    rx_crc_fail_count: int | None = None
+    rx_partial_count: int | None = None
+    rx_overflow_count: int | None = None
+    filtered_total_count: int | None = None
+    filtered_rssi_only_count: int | None = None
+    filtered_lqi_only_count: int | None = None
+    filtered_both_count: int | None = None
+    poll_recovery_count: int | None = None
+    spi_backpressure_count: int | None = None
+    rx_fifo_overwrite_count: int | None = None
+    rx_fifo_depth_count: int | None = None
+    spi_queue_depth_count: int | None = None
+    rx_fifo_hwm: int | None = None
+
+
+class MachinePacketFrame(MachineFrameBase):
+    stream_id: str
+    stream_id_code: int
+    type_id: str
+    type_id_code: int
+    seq: int
+    length: int
+    complete_latency_ms: int | None = None
+    schedule_lag_ms: int | None = None
+    accepted: bool | None = None
+    drop_reason: str | None = None
+    drop_reason_code: int | None = None
+    rssi_dbm: int | None = None
+    lqi: int | None = None
+    crc: bool | None = None
+
+
+class MachineEventFrame(MachineFrameBase):
+    event_id: str
+    event_id_code: int
+    state: str
+    state_code: int
+    reason: str
+    reason_code: int
+    active_slot: int | None = None
+    active_freq_hz: int | None = None
+    backup_slot: int | None = None
+    backup_freq_hz: int | None = None
+    stream_id: str | None = None
+    stream_id_code: int | None = None
+    type_id: str | None = None
+    type_id_code: int | None = None
+    seq: int | None = None
+    length: int | None = None
+    elapsed_ms: int | None = None
+
+
+class RoleMachineReport(BaseModel):
+    role: Role
+    machine_artifact_id: str | None = None
+    machine_artifact_path: str | None = None
+    machine_artifact_size_bytes: int | None = None
+    run: MachineRunFrame | None = None
+    stat_frames: list[MachineStatFrame] = Field(default_factory=list)
+    final_stat: MachineStatFrame | None = None
+    packet_frames: list[MachinePacketFrame] = Field(default_factory=list)
+    event_frames: list[MachineEventFrame] = Field(default_factory=list)
+
+
 class MergeReport(BaseModel):
-    metrics: dict[str, Any] = Field(default_factory=dict)
-    anomalies: list[str] = Field(default_factory=list)
-    merged_events: list[ParsedEvent] = Field(default_factory=list)
-    parse_errors: list[str] = Field(default_factory=list)
-    correction_diagnostics: dict[str, Any] = Field(default_factory=dict)
+    roles: dict[str, RoleMachineReport] = Field(default_factory=dict)
+    decode_diagnostics: list[MachineDecodeDiagnostic] = Field(default_factory=list)
+    annotations: list[ReportAnnotation] = Field(default_factory=list)
+    session_events: list[SessionEventRecord] = Field(default_factory=list)
     status: ReportStatus = ReportStatus.PENDING

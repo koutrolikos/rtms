@@ -10,8 +10,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from shared.high_altitude_cc import HIGH_ALTITUDE_CC_MAX_EXCLUSION_MASKS
-from shared.schemas import HighAltitudeCCBuildConfig, HighAltitudeCCExclusionMask
+from shared.schemas import HighAltitudeCCBuildConfig
 
 
 ROLE_MACROS = {
@@ -26,41 +25,50 @@ class HighAltitudeCCBuildError(RuntimeError):
 
 
 def _replace_guarded_default(text: str, macro: str, value: str) -> str:
-    pattern = re.compile(
-        rf"(?P<prefix>^\s*#ifndef\s+{re.escape(macro)}\s*$\n^\s*#define\s+{re.escape(macro)}\s+)"
-        rf"(?P<value>.+?)(?P<suffix>\s*$)",
-        re.MULTILINE,
-    )
-    updated, count = pattern.subn(lambda match: f"{match.group('prefix')}{value}{match.group('suffix')}", text, count=1)
-    if count != 1:
-        raise HighAltitudeCCBuildError(
-            f"could not locate default definition for {macro} in app_config.h"
-        )
-    return updated
+    lines = text.splitlines(keepends=True)
+    start = None
+    guard_pattern = re.compile(rf"^\s*#\s*ifndef\s+{re.escape(macro)}\s*$")
+    if_pattern = re.compile(r"^\s*#\s*(if|ifdef|ifndef)\b")
+    endif_pattern = re.compile(r"^\s*#\s*endif\b")
+    for index, line in enumerate(lines):
+        if guard_pattern.match(line):
+            start = index
+            break
+    if start is None:
+        raise HighAltitudeCCBuildError(f"could not locate default definition for {macro} in app_config.h")
+
+    depth = 0
+    end = None
+    for index in range(start, len(lines)):
+        line = lines[index]
+        if if_pattern.match(line):
+            depth += 1
+            continue
+        if endif_pattern.match(line):
+            depth -= 1
+            if depth == 0:
+                end = index
+                break
+    if end is None:
+        raise HighAltitudeCCBuildError(f"unterminated default definition for {macro} in app_config.h")
+
+    replacement = [
+        f"#ifndef {macro}\n",
+        f"#define {macro} {value}\n",
+        "#endif\n",
+    ]
+    lines[start : end + 1] = replacement
+    return "".join(lines)
 
 
 def _macro_value_overrides(role_macro: str, build_config: HighAltitudeCCBuildConfig) -> dict[str, str]:
-    replacements = {
+    return {
         "APP_ROLE_MODE": f"({role_macro})",
-        "APP_DEBUG_ENABLE": f"({build_config.app_debug_enable})",
-        "APP_LOG_LEVEL": f"({build_config.app_log_level})",
-        "APP_CHSEL_ALLOWLIST_COUNT": f"({len(build_config.chsel.allowlist_hz)}U)",
-        "APP_CHSEL_ALLOWLIST_HZ_LIST": ",".join(f"{value}UL" for value in build_config.chsel.allowlist_hz),
-        "APP_CHSEL_BAND_MIN_HZ": f"({build_config.chsel.band_min_hz}UL)",
-        "APP_CHSEL_BAND_MAX_HZ": f"({build_config.chsel.band_max_hz}UL)",
-        "APP_CHSEL_OUR_HALF_BW_HZ": f"({build_config.chsel.our_half_bw_hz}UL)",
-        "APP_CHSEL_GUARD_BAND_HZ": f"({build_config.chsel.guard_band_hz}UL)",
-        "APP_CHSEL_EXCLUSION_MASK_COUNT": f"({len(build_config.chsel.exclusion_masks)}U)",
-        "APP_CHSEL_BACKUP_FAILOVER_HOLDOFF_MS": f"({build_config.chsel.backup_failover_holdoff_ms}U)",
+        "APP_HUMAN_LOG_ENABLE": "(0)",
+        "APP_MACHINE_LOG_ENABLE": "(1)",
+        "APP_MACHINE_LOG_DETAIL": f"({build_config.machine_log_detail})",
+        "APP_MACHINE_LOG_STAT_PERIOD_MS": f"({build_config.machine_log_stat_period_ms}U)",
     }
-    for index in range(HIGH_ALTITUDE_CC_MAX_EXCLUSION_MASKS):
-        if index < len(build_config.chsel.exclusion_masks):
-            mask = build_config.chsel.exclusion_masks[index]
-        else:
-            mask = HighAltitudeCCExclusionMask(center_hz=0, half_bw_hz=0)
-        replacements[f"APP_CHSEL_EXCLUSION_MASK{index}_CENTER_HZ"] = f"({mask.center_hz}UL)"
-        replacements[f"APP_CHSEL_EXCLUSION_MASK{index}_HALF_BW_HZ"] = f"({mask.half_bw_hz}UL)"
-    return replacements
 
 
 def patch_app_config_defaults(
@@ -142,8 +150,14 @@ def build_high_altitude_cc(
     ]
     build_command = [cmake_bin, "--build", str(build_dir), "--parallel"]
 
-    effective_app_debug = build_config.app_debug_enable if build_config is not None else app_debug_enable
-    print(f"building High-Altitude-CC role={role} app_debug_enable={effective_app_debug}")
+    if build_config is not None:
+        print(
+            "building High-Altitude-CC "
+            f"role={role} machine_log_detail={build_config.machine_log_detail} "
+            f"machine_log_stat_period_ms={build_config.machine_log_stat_period_ms}"
+        )
+    else:
+        print(f"building High-Altitude-CC role={role} app_debug_enable={app_debug_enable}")
     _run_command(configure_command, cwd=source_dir)
     _run_command(build_command, cwd=source_dir)
 

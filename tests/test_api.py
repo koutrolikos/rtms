@@ -20,41 +20,39 @@ from shared.schemas import BuildRecipe, ConfiguredRepo
 
 
 APP_CONFIG_SAMPLE = """
-#ifndef APP_DEBUG_ENABLE
-#define APP_DEBUG_ENABLE (0)
+#ifndef APP_HUMAN_LOG_ENABLE
+#ifdef APP_DEBUG_ENABLE
+#define APP_HUMAN_LOG_ENABLE (APP_DEBUG_ENABLE)
+#else
+#define APP_HUMAN_LOG_ENABLE (1)
 #endif
-#ifndef APP_LOG_LEVEL
-#define APP_LOG_LEVEL (2)
 #endif
-#ifndef APP_CHSEL_ALLOWLIST_COUNT
-#define APP_CHSEL_ALLOWLIST_COUNT (2U)
+#ifndef APP_MACHINE_LOG_DETAIL_SUMMARY
+#define APP_MACHINE_LOG_DETAIL_SUMMARY (0)
 #endif
-#ifndef APP_CHSEL_ALLOWLIST_HZ_LIST
-#define APP_CHSEL_ALLOWLIST_HZ_LIST 433200000UL,434600000UL
+#ifndef APP_MACHINE_LOG_DETAIL_PACKET
+#define APP_MACHINE_LOG_DETAIL_PACKET (1)
 #endif
-#ifndef APP_CHSEL_BAND_MIN_HZ
-#define APP_CHSEL_BAND_MIN_HZ (433050000UL)
+#ifndef APP_MACHINE_LOG_DETAIL
+#ifdef APP_REPORT_DETAIL
+#define APP_MACHINE_LOG_DETAIL (APP_REPORT_DETAIL)
+#else
+#define APP_MACHINE_LOG_DETAIL (APP_MACHINE_LOG_DETAIL_PACKET)
 #endif
-#ifndef APP_CHSEL_BAND_MAX_HZ
-#define APP_CHSEL_BAND_MAX_HZ (434790000UL)
 #endif
-#ifndef APP_CHSEL_OUR_HALF_BW_HZ
-#define APP_CHSEL_OUR_HALF_BW_HZ (108500UL)
+#ifndef APP_MACHINE_LOG_ENABLE
+#ifdef APP_REPORT_ENABLE
+#define APP_MACHINE_LOG_ENABLE (APP_REPORT_ENABLE)
+#else
+#define APP_MACHINE_LOG_ENABLE (APP_HUMAN_LOG_ENABLE)
 #endif
-#ifndef APP_CHSEL_GUARD_BAND_HZ
-#define APP_CHSEL_GUARD_BAND_HZ (30000UL)
 #endif
-#ifndef APP_CHSEL_EXCLUSION_MASK_COUNT
-#define APP_CHSEL_EXCLUSION_MASK_COUNT (1U)
+#ifndef APP_MACHINE_LOG_STAT_PERIOD_MS
+#ifdef APP_REPORT_STAT_PERIOD_MS
+#define APP_MACHINE_LOG_STAT_PERIOD_MS (APP_REPORT_STAT_PERIOD_MS)
+#else
+#define APP_MACHINE_LOG_STAT_PERIOD_MS (5000U)
 #endif
-#ifndef APP_CHSEL_EXCLUSION_MASK0_CENTER_HZ
-#define APP_CHSEL_EXCLUSION_MASK0_CENTER_HZ (433920000UL)
-#endif
-#ifndef APP_CHSEL_EXCLUSION_MASK0_HALF_BW_HZ
-#define APP_CHSEL_EXCLUSION_MASK0_HALF_BW_HZ (25000UL)
-#endif
-#ifndef APP_CHSEL_BACKUP_FAILOVER_HOLDOFF_MS
-#define APP_CHSEL_BACKUP_FAILOVER_HOLDOFF_MS (15000U)
 #endif
 """.strip()
 
@@ -333,10 +331,9 @@ def test_repo_build_config_endpoint_parses_high_altitude_cc_defaults(db_session,
     payload = response.json()
     assert payload["repo_id"] == "high-altitude-cc"
     assert payload["git_sha"] == "deadbeef"
-    assert payload["build_config"]["app_debug_enable"] == 0
-    assert payload["build_config"]["app_log_level"] == 2
-    assert payload["build_config"]["chsel"]["allowlist_hz"] == [433200000, 434600000]
-    assert payload["constraints"]["exclusion_mask_count_max"] == 4
+    assert payload["build_config"]["machine_log_detail"] == 1
+    assert payload["build_config"]["machine_log_stat_period_ms"] == 5000
+    assert payload["constraints"]["machine_log_detail_options"][0]["label"] == "Summary"
 
 
 def test_request_build_json_stores_high_altitude_cc_build_config_and_payload(
@@ -371,19 +368,8 @@ def test_request_build_json_stores_high_altitude_cc_build_config_and_payload(
             "git_sha": "deadbeefcafebabe",
             "build_agent_id": "agent-build",
             "build_config": {
-                "app_debug_enable": 0,
-                "app_log_level": 2,
-                "chsel": {
-                    "allowlist_hz": [433200000, 434600000],
-                    "band_min_hz": 433050000,
-                    "band_max_hz": 434790000,
-                    "our_half_bw_hz": 108500,
-                    "guard_band_hz": 30000,
-                    "exclusion_masks": [
-                        {"center_hz": 433920000, "half_bw_hz": 25000},
-                    ],
-                    "backup_failover_holdoff_ms": 15000,
-                },
+                "machine_log_detail": 1,
+                "machine_log_stat_period_ms": 5000,
             },
         },
     )
@@ -395,9 +381,9 @@ def test_request_build_json_stores_high_altitude_cc_build_config_and_payload(
     assert artifact is not None
     assert job is not None
     assert artifact.metadata_json["auto_assign_role"] == "TX"
-    assert artifact.metadata_json["requested_build_config"]["app_log_level"] == 2
+    assert artifact.metadata_json["requested_build_config"]["machine_log_detail"] == 1
     assert job.role == "TX"
-    assert job.payload_json["build_config"]["chsel"]["allowlist_hz"] == [433200000, 434600000]
+    assert job.payload_json["build_config"]["machine_log_stat_period_ms"] == 5000
 
 
 def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
@@ -430,7 +416,7 @@ def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
         source_repo="koutrolikos/High-Altitude-CC",
         git_sha="deadbeef",
         role_compatibility_json=["TX"],
-        metadata_json={"requested_build_config": {"app_debug_enable": 0}},
+        metadata_json={"requested_build_config": {"machine_log_detail": 1, "machine_log_stat_period_ms": 5000}},
         storage_path="artifacts/session-id/artifact-id/bundle.zip",
     )
     raw_artifact = RawArtifact(
@@ -449,9 +435,11 @@ def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
 
     assert response.status_code == 200
     assert "Load Config" in response.text
-    assert "APP_DEBUG_ENABLE" in response.text
-    assert "Channel Selection" in response.text
-    assert "Config Debug 0" in response.text
+    assert "Detail Level" in response.text
+    assert "Stat Period (ms)" in response.text
+    assert "Human-readable RTT is always disabled for these builds." in response.text
+    assert "Channel Selection" not in response.text
+    assert "Config Detail Packet | Stat period 5000 ms" in response.text
     assert "requested_build_config" not in response.text
     assert "build log" in response.text
     assert "Existing Artifacts" not in response.text
@@ -629,19 +617,8 @@ def test_session_live_endpoint_version_changes_when_build_job_finishes(db_sessio
             "git_sha": "deadbeefcafebabe",
             "build_agent_id": "agent-build",
             "build_config": {
-                "app_debug_enable": 0,
-                "app_log_level": 2,
-                "chsel": {
-                    "allowlist_hz": [433200000, 434600000],
-                    "band_min_hz": 433050000,
-                    "band_max_hz": 434790000,
-                    "our_half_bw_hz": 108500,
-                    "guard_band_hz": 30000,
-                    "exclusion_masks": [
-                        {"center_hz": 433920000, "half_bw_hz": 25000},
-                    ],
-                    "backup_failover_holdoff_ms": 15000,
-                },
+                "machine_log_detail": 1,
+                "machine_log_stat_period_ms": 5000,
             },
         },
     )
