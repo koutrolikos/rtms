@@ -1,36 +1,48 @@
 {% extends "base.html" %}
 {% block title %}Raw Artifacts{% endblock %}
 {% block content %}
-<section class="panel">
-  <div class="panel-head">
-    <h2>Raw Artifacts</h2>
-    <a class="button secondary" href="/sessions/{{ session.id }}">Back to Session</a>
-  </div>
-  <div class="table-shell">
-    <table>
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Type</th>
-          <th>Role</th>
-          <th>Size</th>
-          <th>Path</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in raw_artifacts %}
-        <tr>
-          <td>{{ item.id | short_id }}</td>
-          <td>{{ item.type | humanize_token }}</td>
-          <td>{{ item.role or "session" }}</td>
-          <td>{{ item.size_bytes | human_bytes }}</td>
-          <td><a href="/api/raw-artifacts/{{ item.id }}/download">{{ item.storage_path | basename }}</a></td>
-        </tr>
-        {% else %}
-        <tr><td colspan="5" class="muted">No raw artifacts for this session.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+<section class="raw-artifacts-page">
+  <section class="hero raw-artifacts-hero">
+    <div>
+      <p class="eyebrow">Artifacts</p>
+      <h2>Raw Artifacts</h2>
+      <p class="muted">Session {{ session.name }}</p>
+    </div>
+    <div class="hero-status">
+      <a class="button secondary" href="/sessions/{{ session.id }}">Back to Session</a>
+    </div>
+  </section>
+
+  <section class="panel raw-artifacts-panel">
+    <div class="panel-head">
+      <h3>Downloads</h3>
+    </div>
+    <div class="table-shell">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Type</th>
+            <th>Role</th>
+            <th>Size</th>
+            <th>Path</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in raw_artifacts %}
+          <tr>
+            <td>{{ item.id | short_id }}</td>
+            <td>{{ item.type | humanize_token }}</td>
+            <td>{{ item.role or "session" }}</td>
+            <td>{{ item.size_bytes | human_bytes }}</td>
+            <td><a href="/api/raw-artifacts/{{ item.id }}/download">{{ item.storage_path | basename }}</a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="muted">No raw artifacts for this session.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 </section>
 {% endblock %}

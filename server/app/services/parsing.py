@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from server.app.models.entities import RawArtifact, Session as SessionModel, SessionRoleRun
+from server.app.models.entities import Artifact, RawArtifact, Session as SessionModel, SessionRoleRun
 from server.app.services.sessions import annotations as list_annotations
 from server.app.services.sessions import session_events as list_session_events
 from shared.enums import EventSourceType, EventType, RawArtifactType, ReportStatus, Role
@@ -62,12 +62,12 @@ def merge_session_logs(
     raw_items: list[RawArtifact],
     storage_root: Path,
 ) -> MergeReport:
-    del role_runs
     roles = {
         Role.TX.value: RoleMachineReport(role=Role.TX),
         Role.RX.value: RoleMachineReport(role=Role.RX),
     }
     decode_diagnostics: list[MachineDecodeDiagnostic] = []
+    human_log_policy = _resolve_human_log_policy(db, role_runs)
 
     for role in (Role.TX, Role.RX):
         role_report = roles[role.value]
@@ -100,6 +100,13 @@ def merge_session_logs(
 
         _decode_machine_artifact(role_report, artifact, path.read_bytes(), decode_diagnostics)
         _finalize_role_report(role_report)
+        _apply_human_log_policy_override(
+            role_report=role_report,
+            role=role,
+            artifact=artifact,
+            policy_enabled=human_log_policy.get(role.value),
+            decode_diagnostics=decode_diagnostics,
+        )
 
     if not any(_role_has_telemetry(item) for item in roles.values()):
         decode_diagnostics.append(
@@ -664,6 +671,72 @@ def _finalize_role_report(role_report: RoleMachineReport) -> None:
     role_report.event_frames.sort(key=lambda item: (item.t_ms, item.offset))
     if role_report.stat_frames:
         role_report.final_stat = role_report.stat_frames[-1]
+
+
+def _resolve_human_log_policy(db: Session, role_runs: list[SessionRoleRun]) -> dict[str, bool | None]:
+    policy_by_role: dict[str, bool | None] = {}
+    for role_run in role_runs:
+        role_value = role_run.role
+        if role_value in policy_by_role:
+            continue
+        if not role_run.artifact_id:
+            policy_by_role[role_value] = None
+            continue
+        artifact = db.get(Artifact, role_run.artifact_id)
+        if artifact is None:
+            policy_by_role[role_value] = None
+            continue
+        policy_by_role[role_value] = _human_log_policy_from_artifact_metadata(artifact.metadata_json or {})
+    return policy_by_role
+
+
+def _human_log_policy_from_artifact_metadata(metadata: dict[str, Any]) -> bool | None:
+    build_metadata = metadata.get("build_metadata")
+    if not isinstance(build_metadata, dict):
+        manifest = metadata.get("manifest")
+        if isinstance(manifest, dict):
+            build_metadata = manifest.get("build_metadata")
+    if not isinstance(build_metadata, dict):
+        return None
+    cdefs = build_metadata.get("resolved_cdefs_extra")
+    if not isinstance(cdefs, list):
+        return None
+    for item in cdefs:
+        if not isinstance(item, str):
+            continue
+        normalized = item.strip()
+        if normalized == "-DAPP_HUMAN_LOG_ENABLE=0":
+            return False
+        if normalized == "-DAPP_HUMAN_LOG_ENABLE=1":
+            return True
+    return None
+
+
+def _apply_human_log_policy_override(
+    *,
+    role_report: RoleMachineReport,
+    role: Role,
+    artifact: RawArtifact,
+    policy_enabled: bool | None,
+    decode_diagnostics: list[MachineDecodeDiagnostic],
+) -> None:
+    if policy_enabled is not False or role_report.run is None:
+        return
+    if role_report.run.human_log_enable is False and role_report.run.human_log_level == 0:
+        return
+    role_report.run.human_log_enable = False
+    role_report.run.human_log_level = 0
+    decode_diagnostics.append(
+        _diag(
+            role=role,
+            artifact=artifact,
+            code="human_log_policy_override",
+            message=(
+                "Build flags disable human logs (APP_HUMAN_LOG_ENABLE=0); "
+                "overrode decoded run snapshot fields."
+            ),
+        )
+    )
 
 
 def _role_has_telemetry(role_report: RoleMachineReport) -> bool:

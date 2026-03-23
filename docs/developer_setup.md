@@ -31,7 +31,21 @@ Windows PowerShell:
 .\scripts\bootstrap_agent_windows.ps1 -ServerUrl http://172.20.10.3:8000
 ```
 
-After bootstrap finishes on macOS/Linux, open a new terminal and run `range-test-server run` or `range-test-agent run` directly.
+After bootstrap, source the generated env file and run binaries from the venv:
+
+```bash
+source ~/rtms-agent/.agent-env.sh
+~/rtms-agent/.venv/bin/range-test-server run
+~/rtms-agent/.venv/bin/range-test-agent run
+```
+
+On Windows PowerShell:
+
+```powershell
+. ~/rtms-agent/.agent-env.ps1
+~/rtms-agent/.venv/Scripts/range-test-server.exe run
+~/rtms-agent/.venv/Scripts/range-test-agent.exe run
+```
 
 ## Fastest Path (Fresh Machine)
 
@@ -62,6 +76,8 @@ Modes supported by both scripts:
 - `full` (default): build + flash + capture
 - `build-only`
 - `flash-capture`
+
+Note: bootstrap scripts install missing dependencies automatically, then clone/update RTMS and write environment files.
 
 ### Linux (Ubuntu/Debian)
 

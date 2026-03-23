@@ -21,7 +21,7 @@ Required:
 
 Options:
   --mode MODE                 full | build-only | flash-capture (default: full)
-  --install-build-tools BOOL  true | false | auto (default: auto)
+  --install-build-tools BOOL  true | false | auto (default: auto, controls build-tool dependency checks)
   --repo-url URL              RTMS git URL (default: https://github.com/koutrolikos/rtms.git)
   --install-dir PATH          Install path (default: ~/rtms-agent)
   --openocd-target-cfg CFG    OpenOCD target cfg (default: target/stm32g4x.cfg)
@@ -86,6 +86,8 @@ normalize_server_url() {
   printf '%s\n' "$trimmed"
 }
 
+missing_deps=()
+
 run_privileged() {
   if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
     "$@"
@@ -93,6 +95,83 @@ run_privileged() {
   fi
   require_cmd sudo
   sudo "$@"
+}
+
+record_missing_cmd() {
+  local cmd="$1"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    missing_deps+=("$cmd")
+  fi
+}
+
+detect_pkg_manager() {
+  if command -v apt-get >/dev/null 2>&1; then
+    printf '%s\n' "apt"
+    return
+  fi
+  if command -v dnf >/dev/null 2>&1; then
+    printf '%s\n' "dnf"
+    return
+  fi
+  die "unsupported Linux package manager. Use apt or dnf."
+}
+
+install_missing_linux_deps() {
+  local pkg_manager="$1"
+  local -a packages=()
+
+  for dep in "${missing_deps[@]}"; do
+    case "$pkg_manager:$dep" in
+      apt:python3)
+        packages+=(python3 python3-venv python3-pip)
+        ;;
+      apt:git)
+        packages+=(git)
+        ;;
+      apt:openocd)
+        packages+=(openocd)
+        ;;
+      apt:make)
+        packages+=(make)
+        ;;
+      apt:cmake)
+        packages+=(cmake)
+        ;;
+      apt:arm-none-eabi-gcc)
+        packages+=(gcc-arm-none-eabi)
+        ;;
+      dnf:python3)
+        packages+=(python3 python3-pip)
+        ;;
+      dnf:git)
+        packages+=(git)
+        ;;
+      dnf:openocd)
+        packages+=(openocd)
+        ;;
+      dnf:make)
+        packages+=(make)
+        ;;
+      dnf:cmake)
+        packages+=(cmake)
+        ;;
+      dnf:arm-none-eabi-gcc)
+        packages+=(arm-none-eabi-gcc-cs)
+        ;;
+    esac
+  done
+
+  if [[ "${#packages[@]}" -eq 0 ]]; then
+    return
+  fi
+
+  echo "Installing missing packages via $pkg_manager: ${packages[*]}"
+  if [[ "$pkg_manager" == "apt" ]]; then
+    run_privileged apt-get update
+    run_privileged apt-get install -y "${packages[@]}"
+  else
+    run_privileged dnf install -y "${packages[@]}"
+  fi
 }
 
 ensure_install_target_ready() {
@@ -215,30 +294,37 @@ else
   CAPTURE_CAPABLE=1
 fi
 
-if command -v apt-get >/dev/null 2>&1; then
-  PKG_MANAGER="apt"
-elif command -v dnf >/dev/null 2>&1; then
-  PKG_MANAGER="dnf"
-else
-  echo "error: unsupported Linux package manager. Use apt or dnf." >&2
-  exit 1
+ensure_install_target_ready
+
+echo "[1/4] Checking required tools"
+record_missing_cmd git
+record_missing_cmd python3
+if [[ "$FLASH_CAPABLE" -eq 1 || "$CAPTURE_CAPABLE" -eq 1 ]]; then
+  record_missing_cmd openocd
+fi
+if [[ "$INSTALL_BUILD_TOOLS" == "true" ]]; then
+  record_missing_cmd make
+  record_missing_cmd cmake
+  record_missing_cmd arm-none-eabi-gcc
 fi
 
-echo "[1/6] Installing OS packages via $PKG_MANAGER"
-if [[ "$PKG_MANAGER" == "apt" ]]; then
-  run_privileged apt-get update
-  run_privileged apt-get install -y python3 python3-venv python3-pip git curl openocd
-  if [[ "$INSTALL_BUILD_TOOLS" == "true" ]]; then
-    run_privileged apt-get install -y make cmake gcc-arm-none-eabi
-  fi
-else
-  run_privileged dnf install -y python3 python3-pip git curl openocd
-  if [[ "$INSTALL_BUILD_TOOLS" == "true" ]]; then
-    run_privileged dnf install -y make cmake arm-none-eabi-gcc-cs
-  fi
+if [[ "${#missing_deps[@]}" -gt 0 ]]; then
+  PKG_MANAGER="$(detect_pkg_manager)"
+  install_missing_linux_deps "$PKG_MANAGER"
 fi
 
-echo "[2/6] Cloning or updating RTMS repo"
+require_cmd git
+require_cmd python3
+if [[ "$FLASH_CAPABLE" -eq 1 || "$CAPTURE_CAPABLE" -eq 1 ]]; then
+  require_cmd openocd
+fi
+if [[ "$INSTALL_BUILD_TOOLS" == "true" ]]; then
+  require_cmd make
+  require_cmd cmake
+  require_cmd arm-none-eabi-gcc
+fi
+
+echo "[2/4] Cloning or updating RTMS repo"
 ensure_install_target_ready
 mkdir -p "$(dirname "$INSTALL_DIR")"
 if [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -248,16 +334,9 @@ else
   git clone "$REPO_URL" "$INSTALL_DIR"
 fi
 
-echo "[3/6] Creating Python virtualenv and installing package"
-require_cmd python3
-python3 -m venv "$INSTALL_DIR/.venv"
-"$INSTALL_DIR/.venv/bin/pip" install --upgrade pip
-"$INSTALL_DIR/.venv/bin/pip" install -e "$INSTALL_DIR"
-
-echo "[4/6] Writing agent env file"
+echo "[3/4] Writing agent env file"
 ENV_FILE="$INSTALL_DIR/.agent-env.sh"
 cat > "$ENV_FILE" <<ENVVARS
-export PATH="$INSTALL_DIR/.venv/bin:\$PATH"
 export RANGE_TEST_INSTALL_DIR="$INSTALL_DIR"
 export RANGE_TEST_SERVER_URL="$SERVER_URL"
 export RANGE_TEST_AGENT_DATA_DIR="$INSTALL_DIR/agent_data"
@@ -268,49 +347,7 @@ export RANGE_TEST_AGENT_FLASH_CAPABLE=$FLASH_CAPABLE
 export RANGE_TEST_AGENT_CAPTURE_CAPABLE=$CAPTURE_CAPABLE
 ENVVARS
 
-echo "[5/6] Installing command shims"
-WRAPPER_DIR="$HOME/.local/bin"
-mkdir -p "$WRAPPER_DIR"
-
-cat > "$WRAPPER_DIR/range-test-server" <<SHIM
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ -f "$INSTALL_DIR/.agent-env.sh" ]]; then
-  source "$INSTALL_DIR/.agent-env.sh"
-fi
-if [[ "\${1:-}" == "run" ]]; then
-  shift
-fi
-exec "$INSTALL_DIR/.venv/bin/range-test-server" "\$@"
-SHIM
-
-cat > "$WRAPPER_DIR/range-test-agent" <<SHIM
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ -f "$INSTALL_DIR/.agent-env.sh" ]]; then
-  source "$INSTALL_DIR/.agent-env.sh"
-fi
-exec "$INSTALL_DIR/.venv/bin/range-test-agent" "\$@"
-SHIM
-
-chmod +x "$WRAPPER_DIR/range-test-server" "$WRAPPER_DIR/range-test-agent"
-
-SHELL_RC="$HOME/.profile"
-if [[ "${SHELL:-}" == *"zsh" ]]; then
-  SHELL_RC="$HOME/.zshrc"
-elif [[ "${SHELL:-}" == *"bash" ]]; then
-  SHELL_RC="$HOME/.bashrc"
-fi
-PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
-if [[ -f "$SHELL_RC" ]]; then
-  if ! grep -Fq "$PATH_LINE" "$SHELL_RC"; then
-    printf "\n%s\n" "$PATH_LINE" >> "$SHELL_RC"
-  fi
-else
-  printf "%s\n" "$PATH_LINE" > "$SHELL_RC"
-fi
-
-echo "[6/6] Basic connectivity check"
+echo "[4/4] Basic connectivity check"
 if command -v curl >/dev/null 2>&1; then
   if curl --max-time 5 --silent --fail "$SERVER_URL/healthz" >/dev/null; then
     echo "healthz: OK"
@@ -323,8 +360,14 @@ cat <<'DONE'
 
 Bootstrap complete.
 
-Open a new terminal, then run:
-  range-test-server run
-  range-test-agent run
+Next commands:
+  cd "$INSTALL_DIR"
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install --upgrade pip
+  pip install -e .
+  source .agent-env.sh
+  ./.venv/bin/range-test-server run
+  ./.venv/bin/range-test-agent run
 
 DONE

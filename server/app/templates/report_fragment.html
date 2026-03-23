@@ -1,323 +1,419 @@
-{% from "_summary.html" import render_summary %}
-{% set tx_host = host_labels.get(session.tx_agent_id, session.tx_agent_id) if session.tx_agent_id else "n/a" %}
-{% set rx_host = host_labels.get(session.rx_agent_id, session.rx_agent_id) if session.rx_agent_id else "n/a" %}
-{% set tx_artifact = session.tx_artifact_id | short_id if session.tx_artifact_id else "no artifact" %}
-{% set rx_artifact = session.rx_artifact_id | short_id if session.rx_artifact_id else "no artifact" %}
-{% set tx_report = merge.roles.get("TX") %}
-{% set rx_report = merge.roles.get("RX") %}
+{% set metrics = derived_metrics or {} %}
+{% set relationship = metrics.pdr_per_relationship_by_rssi or [] %}
+{% set temporal = metrics.temporal_quality_by_time or [] %}
+{% set rolling = metrics.rolling_reliability_by_time or [] %}
+{% set inter_arrival_points = metrics.inter_arrival_points or [] %}
+{% set inter_arrival_hist = metrics.inter_arrival_histogram or [] %}
+{% set rssi_distribution = metrics.rssi_distribution or [] %}
+{% set throughput = metrics.throughput_by_time or [] %}
+{% set chart_w = 760 %}
+{% set chart_h = 220 %}
+{% set chart_pad_l = 52 %}
+{% set chart_pad_r = 18 %}
+{% set chart_pad_t = 16 %}
+{% set chart_pad_b = 30 %}
+{% set axis_color = '#94a3b8' %}
+{% set grid_color = '#d0d7de' %}
+{% set label_color = '#4b5563' %}
+{% set c_primary = '#1f6feb' %}
+{% set c_secondary = '#2f9a66' %}
+{% set c_tertiary = '#d17d00' %}
+
 <section class="report">
   <section class="report-screen">
-    <section class="overview-strip report-overview-strip">
-      <article class="overview-card">
-        <span class="overview-label">Session Status</span>
-        <span class="overview-value">{{ session.status | humanize_token }}</span>
-        <span class="overview-meta">{{ session.started_at or "Not started" }}</span>
-      </article>
-      <article class="overview-card">
-        <span class="overview-label">Report Status</span>
-        <span class="overview-value">{{ merge.status | humanize_token }}</span>
-        <span class="overview-meta">{{ raw_artifacts | length }} artifacts</span>
-      </article>
-      <article class="overview-card">
-        <span class="overview-label">TX</span>
-        <span class="overview-value">{{ tx_host }}</span>
-        <span class="overview-meta">{{ tx_artifact }}</span>
-      </article>
-      <article class="overview-card">
-        <span class="overview-label">RX</span>
-        <span class="overview-value">{{ rx_host }}</span>
-        <span class="overview-meta">{{ rx_artifact }}</span>
-      </article>
-    </section>
-
-    <section class="report-primary-grid">
-      <section class="panel">
-        <div class="panel-head">
-          <h3>Session</h3>
-        </div>
-        <dl class="meta report-session-meta">
-          <div><dt>Location</dt><dd>{{ session.location_text or "n/a" }}</dd></div>
-          <div><dt>Started</dt><dd>{{ session.started_at or "-" }}</dd></div>
-          <div><dt>Ended</dt><dd>{{ session.ended_at or "-" }}</dd></div>
-          <div><dt>Initial Notes</dt><dd>{{ session.initial_notes or "-" }}</dd></div>
-          <div><dt>Final Notes</dt><dd>{{ session.final_notes or "-" }}</dd></div>
-        </dl>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h3>Decode Diagnostics</h3>
-        </div>
-        <div class="table-shell">
-          <table>
-            <thead><tr><th>Role</th><th>Code</th><th>Artifact</th><th>Offset</th><th>Message</th></tr></thead>
-            <tbody>
-              {% for item in merge.decode_diagnostics %}
-              <tr>
-                <td>{{ item.role.value if item.role else "session" }}</td>
-                <td>{{ item.code | humanize_token }}</td>
-                <td>{{ item.artifact_path | basename if item.artifact_path else "-" }}</td>
-                <td>{{ item.offset if item.offset is not none else "-" }}</td>
-                <td>{{ item.message }}</td>
-              </tr>
-              {% else %}
-              <tr><td colspan="5" class="muted">No decode diagnostics.</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </section>
-
-    {% for role_key, role_report in [("TX", tx_report), ("RX", rx_report)] %}
     <section class="panel">
       <div class="panel-head">
-        <h3>{{ role_key }} Run Snapshot</h3>
+        <h3>Derived Metrics Scope</h3>
       </div>
-      {% if role_report and role_report.run %}
-      {% set run = role_report.run %}
+      <p class="muted">
+        This report intentionally includes only metrics that are fully derivable from current decoded API payloads.
+      </p>
+      <div class="report-status-row">
+        <span class="report-pill">RX packets {{ metrics.rx_packet_count or 0 }}</span>
+        <span class="report-pill">RX with RSSI {{ metrics.rx_packets_with_rssi or 0 }}</span>
+        <span class="report-pill">RX with LQI {{ metrics.rx_packets_with_lqi or 0 }}</span>
+        <span class="report-pill">Rolling window {{ metrics.window_size_packets or 0 }} packets</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>1. Signal Quality Relationships</h3>
+      </div>
+      {% if relationship %}
+      {% set rel_max_packets = relationship | map(attribute='total_packets') | max %}
+      {% set inner_w = chart_w - chart_pad_l - chart_pad_r %}
+      {% set inner_h = chart_h - chart_pad_t - chart_pad_b %}
+      {% set slot_w = inner_w / (relationship | length) %}
+      <div class="chart-shell">
+        <h4 class="chart-title">Packets by RSSI Bin</h4>
+        <svg viewBox="0 0 {{ chart_w }} {{ chart_h }}" class="chart-svg" role="img" aria-label="Packets by RSSI bin">
+          {% set rel_mid_packets = (rel_max_packets / 2) | round(0, 'floor') %}
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t + (inner_h * 0.33) }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_pad_t + (inner_h * 0.33) }}" stroke="{{ grid_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t + (inner_h * 0.66) }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_pad_t + (inner_h * 0.66) }}" stroke="{{ grid_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_h - chart_pad_b - (inner_h / 2) }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b - (inner_h / 2) }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_pad_t }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_h - chart_pad_b + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">0</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_h - chart_pad_b - (inner_h / 2) + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ rel_mid_packets }}</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_pad_t + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ rel_max_packets }}</text>
+          {% for item in relationship %}
+          {% set bar_h = (item.total_packets / rel_max_packets) * inner_h if rel_max_packets > 0 else 0 %}
+          {% set bar_x = chart_pad_l + loop.index0 * slot_w + (slot_w * 0.15) %}
+          {% set bar_y = chart_h - chart_pad_b - bar_h %}
+          {% set bar_w = slot_w * 0.7 %}
+          <rect x="{{ '%.2f' | format(bar_x) }}" y="{{ '%.2f' | format(bar_y) }}" width="{{ '%.2f' | format(bar_w) }}" height="{{ '%.2f' | format(bar_h) }}" fill="{{ c_primary }}" />
+          <text x="{{ '%.2f' | format(bar_x + bar_w / 2) }}" y="{{ '%.2f' | format(bar_y - 4) }}" font-size="11" fill="{{ label_color }}" text-anchor="middle">{{ item.total_packets }}</text>
+          <text x="{{ '%.2f' | format(bar_x + bar_w / 2) }}" y="{{ chart_h - 8 }}" font-size="11" fill="{{ label_color }}" text-anchor="middle">{{ item.rssi_start_dbm }} to {{ item.rssi_end_dbm }}</text>
+          {% endfor %}
+        </svg>
+      </div>
+      {% endif %}
       <div class="table-shell">
         <table>
-          <thead><tr><th>Field</th><th>Value</th></tr></thead>
+          <thead>
+            <tr>
+              <th>RSSI Bin (dBm)</th>
+              <th>Packets</th>
+              <th>Accepted</th>
+              <th>PDR</th>
+              <th>PER</th>
+              <th>Avg LQI</th>
+            </tr>
+          </thead>
           <tbody>
-            <tr><td>t ms</td><td>{{ run.t_ms }}</td></tr>
-            <tr><td>Detail</td><td>{{ run.machine_detail }} ({{ run.machine_detail_code }})</td></tr>
-            <tr><td>Build</td><td>{{ run.build }} ({{ run.build_code }})</td></tr>
-            <tr><td>Channel state</td><td>{{ run.channel_state }} ({{ run.channel_state_code }})</td></tr>
-            <tr><td>Human log level</td><td>{{ run.human_log_level }}</td></tr>
-            <tr><td>Human log enable</td><td>{{ run.human_log_enable }}</td></tr>
-            <tr><td>Machine log enable</td><td>{{ run.machine_log_enable }}</td></tr>
-            <tr><td>Active slot</td><td>{{ run.active_slot }}</td></tr>
-            <tr><td>Active frequency Hz</td><td>{{ run.active_freq_hz }}</td></tr>
-            <tr><td>Backup slot</td><td>{{ run.backup_slot }}</td></tr>
-            <tr><td>Backup frequency Hz</td><td>{{ run.backup_freq_hz }}</td></tr>
-            <tr><td>RF bitrate bps</td><td>{{ run.rf_bitrate_bps }}</td></tr>
-            <tr><td>Machine stat period ms</td><td>{{ run.machine_log_stat_period_ms }}</td></tr>
-            {% if role_key == "TX" %}
-            <tr><td>Airtime limit us</td><td>{{ run.airtime_limit_us }}</td></tr>
-            <tr><td>GPS telemetry period ms</td><td>{{ run.telem_gps_period_ms }}</td></tr>
-            <tr><td>IMU/baro telemetry period ms</td><td>{{ run.telem_imu_baro_period_ms }}</td></tr>
-            <tr><td>TX complete timeout ms</td><td>{{ run.tx_complete_timeout_ms }}</td></tr>
+            {% for item in relationship %}
+            <tr>
+              <td>[{{ item.rssi_start_dbm }}, {{ item.rssi_end_dbm }})</td>
+              <td>{{ item.total_packets }}</td>
+              <td>{{ item.accepted_packets }}</td>
+              <td>{{ '%.3f' | format(item.pdr) }}</td>
+              <td>{{ '%.3f' | format(item.per) }}</td>
+              <td>{{ ('%.1f' | format(item.avg_lqi)) if item.avg_lqi is not none else '-' }}</td>
+            </tr>
             {% else %}
-            <tr><td>RX threshold enable</td><td>{{ run.rx_thresh_enable }}</td></tr>
-            <tr><td>RX min RSSI dBm</td><td>{{ run.rx_min_rssi_dbm }}</td></tr>
-            <tr><td>RX min LQI</td><td>{{ run.rx_min_lqi }}</td></tr>
-            <tr><td>RX poll interval ms</td><td>{{ run.rx_poll_interval_ms }}</td></tr>
-            <tr><td>Host bridge budget count</td><td>{{ run.rx_host_bridge_budget_count }}</td></tr>
-            {% endif %}
+            <tr><td colspan="6" class="muted">No RX packet RSSI/LQI samples available.</td></tr>
+            {% endfor %}
           </tbody>
         </table>
       </div>
-      {% else %}
-      <p class="muted">No decoded run snapshot for {{ role_key }}.</p>
-      {% endif %}
-    </section>
-
-    <section class="report-secondary-grid">
-      <section class="panel">
-        <div class="panel-head">
-          <h3>{{ role_key }} Final Stat</h3>
-        </div>
-        {% if role_report and role_report.final_stat %}
-        {% set stat = role_report.final_stat %}
-        <div class="table-shell">
-          <table>
-            <thead><tr><th>Field</th><th>Value</th></tr></thead>
-            <tbody>
-              <tr><td>t ms</td><td>{{ stat.t_ms }}</td></tr>
-              {% if role_key == "TX" %}
-              <tr><td>Attempts</td><td>{{ stat.attempt_count }}</td></tr>
-              <tr><td>Queued</td><td>{{ stat.queued_count }}</td></tr>
-              <tr><td>Completed</td><td>{{ stat.completed_count }}</td></tr>
-              <tr><td>GPS queued</td><td>{{ stat.gps_queued_count }}</td></tr>
-              <tr><td>GPS completed</td><td>{{ stat.gps_completed_count }}</td></tr>
-              <tr><td>IMU/baro queued</td><td>{{ stat.imu_baro_queued_count }}</td></tr>
-              <tr><td>IMU/baro completed</td><td>{{ stat.imu_baro_completed_count }}</td></tr>
-              <tr><td>Other queued</td><td>{{ stat.other_queued_count }}</td></tr>
-              <tr><td>Other completed</td><td>{{ stat.other_completed_count }}</td></tr>
-              <tr><td>Busy</td><td>{{ stat.busy_count }}</td></tr>
-              <tr><td>Airtime reject</td><td>{{ stat.airtime_reject_count }}</td></tr>
-              <tr><td>Send fail</td><td>{{ stat.send_fail_count }}</td></tr>
-              <tr><td>Timeout</td><td>{{ stat.timeout_count }}</td></tr>
-              <tr><td>Max completion latency ms</td><td>{{ stat.max_complete_latency_ms }}</td></tr>
-              <tr><td>Last completion latency ms</td><td>{{ stat.last_complete_latency_ms }}</td></tr>
-              <tr><td>Max schedule lag ms</td><td>{{ stat.max_schedule_lag_ms }}</td></tr>
-              <tr><td>Airtime used us</td><td>{{ stat.airtime_used_us }}</td></tr>
-              <tr><td>Airtime limit us</td><td>{{ stat.airtime_limit_us }}</td></tr>
-              {% else %}
-              <tr><td>RX ok</td><td>{{ stat.rx_ok_count }}</td></tr>
-              <tr><td>Accepted</td><td>{{ stat.accepted_count }}</td></tr>
-              <tr><td>Rejected</td><td>{{ stat.rejected_count }}</td></tr>
-              <tr><td>CRC fail</td><td>{{ stat.rx_crc_fail_count }}</td></tr>
-              <tr><td>Partial</td><td>{{ stat.rx_partial_count }}</td></tr>
-              <tr><td>Overflow</td><td>{{ stat.rx_overflow_count }}</td></tr>
-              <tr><td>Filtered total</td><td>{{ stat.filtered_total_count }}</td></tr>
-              <tr><td>Filtered RSSI only</td><td>{{ stat.filtered_rssi_only_count }}</td></tr>
-              <tr><td>Filtered LQI only</td><td>{{ stat.filtered_lqi_only_count }}</td></tr>
-              <tr><td>Filtered both</td><td>{{ stat.filtered_both_count }}</td></tr>
-              <tr><td>Poll recovery</td><td>{{ stat.poll_recovery_count }}</td></tr>
-              <tr><td>SPI backpressure</td><td>{{ stat.spi_backpressure_count }}</td></tr>
-              <tr><td>RX FIFO overwrite</td><td>{{ stat.rx_fifo_overwrite_count }}</td></tr>
-              <tr><td>RX FIFO depth</td><td>{{ stat.rx_fifo_depth_count }}</td></tr>
-              <tr><td>SPI queue depth</td><td>{{ stat.spi_queue_depth_count }}</td></tr>
-              <tr><td>RX FIFO high-water mark</td><td>{{ stat.rx_fifo_hwm }}</td></tr>
-              {% endif %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <p class="muted">No decoded stat frames for {{ role_key }}.</p>
-        {% endif %}
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h3>{{ role_key }} Artifact</h3>
-        </div>
-        {% if role_report and role_report.machine_artifact_path %}
-        <dl class="meta report-session-meta">
-          <div><dt>Machine log</dt><dd>{{ role_report.machine_artifact_path | basename }}</dd></div>
-          <div><dt>Size</dt><dd>{{ role_report.machine_artifact_size_bytes | human_bytes if role_report.machine_artifact_size_bytes is not none else "-" }}</dd></div>
-        </dl>
-        {% else %}
-        <p class="muted">No machine artifact registered for {{ role_key }}.</p>
-        {% endif %}
-      </section>
-    </section>
-
-    <section class="report-secondary-grid">
-      <section class="panel">
-        <div class="panel-head">
-          <h3>{{ role_key }} Packet Records</h3>
-        </div>
-        {% if role_report and role_report.packet_frames %}
-        <div class="table-shell">
-          <table>
-            <thead>
-              {% if role_key == "TX" %}
-              <tr><th>t ms</th><th>Stream</th><th>Type</th><th>Seq</th><th>Length</th><th>Completion Latency</th><th>Schedule Lag</th></tr>
-              {% else %}
-              <tr><th>t ms</th><th>Stream</th><th>Type</th><th>Seq</th><th>Length</th><th>Accepted</th><th>Drop Reason</th><th>RSSI</th><th>LQI</th><th>CRC</th></tr>
-              {% endif %}
-            </thead>
-            <tbody>
-              {% for frame in role_report.packet_frames %}
-              <tr>
-                <td>{{ frame.t_ms }}</td>
-                <td>{{ frame.stream_id }} ({{ frame.stream_id_code }})</td>
-                <td>{{ frame.type_id }} ({{ frame.type_id_code }})</td>
-                <td>{{ frame.seq }}</td>
-                <td>{{ frame.length }}</td>
-                {% if role_key == "TX" %}
-                <td>{{ frame.complete_latency_ms }}</td>
-                <td>{{ frame.schedule_lag_ms }}</td>
-                {% else %}
-                <td>{{ frame.accepted }}</td>
-                <td>{{ frame.drop_reason }} ({{ frame.drop_reason_code }})</td>
-                <td>{{ frame.rssi_dbm }}</td>
-                <td>{{ frame.lqi }}</td>
-                <td>{{ frame.crc }}</td>
-                {% endif %}
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <p class="muted">No decoded packet frames for {{ role_key }}.</p>
-        {% endif %}
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h3>{{ role_key }} Operational Events</h3>
-        </div>
-        {% if role_report and role_report.event_frames %}
-        <div class="table-shell">
-          <table>
-            <thead><tr><th>t ms</th><th>Event</th><th>State</th><th>Reason</th><th>Details</th></tr></thead>
-            <tbody>
-              {% for frame in role_report.event_frames %}
-              <tr>
-                <td>{{ frame.t_ms }}</td>
-                <td>{{ frame.event_id }} ({{ frame.event_id_code }})</td>
-                <td>{{ frame.state }} ({{ frame.state_code }})</td>
-                <td>{{ frame.reason }} ({{ frame.reason_code }})</td>
-                <td>
-                  {% if frame.active_slot is not none %}
-                  active={{ frame.active_slot }} / {{ frame.active_freq_hz }}, backup={{ frame.backup_slot }} / {{ frame.backup_freq_hz }}
-                  {% elif frame.stream_id is not none %}
-                  stream={{ frame.stream_id }} ({{ frame.stream_id_code }}), type={{ frame.type_id }} ({{ frame.type_id_code }}), seq={{ frame.seq }}, len={{ frame.length }}, elapsed={{ frame.elapsed_ms }}
-                  {% else %}
-                  -
-                  {% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <p class="muted">No decoded operational events for {{ role_key }}.</p>
-        {% endif %}
-      </section>
-    </section>
-    {% endfor %}
-
-    <section class="report-secondary-grid">
-      <section class="panel">
-        <div class="panel-head">
-          <h3>Annotations</h3>
-        </div>
-        <ul class="timeline">
-          {% for item in merge.annotations %}
-          <li>{{ item.created_at }} | {{ item.text }}</li>
-          {% else %}
-          <li class="muted">No annotations.</li>
-          {% endfor %}
-        </ul>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h3>Raw Artifacts</h3>
-        </div>
-        <div class="table-shell">
-          <table>
-            <thead><tr><th>Type</th><th>Role</th><th>Path</th></tr></thead>
-            <tbody>
-              {% for item in raw_artifacts %}
-              <tr>
-                <td>{{ item.type | humanize_token }}</td>
-                <td>{{ item.role or "session" }}</td>
-                <td>{{ item.storage_path | basename }}</td>
-              </tr>
-              {% else %}
-              <tr><td colspan="3" class="muted">No artifacts.</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </section>
     </section>
 
     <section class="panel">
       <div class="panel-head">
-        <h3>Session Event Audit</h3>
+        <h3>2. Temporal Behavior</h3>
+      </div>
+      {% if temporal %}
+      {% set temporal_max_pdr = 1.0 %}
+      {% set temporal_inner_w = chart_w - chart_pad_l - chart_pad_r %}
+      {% set temporal_inner_h = chart_h - chart_pad_t - chart_pad_b %}
+      {% set temporal_count = temporal | length %}
+      {% set temporal_step = temporal_inner_w / ((temporal_count - 1) if temporal_count > 1 else 1) %}
+      {% set temporal_mid = ((temporal_count - 1) / 2) | round(0, 'floor') | int %}
+      <div class="chart-shell">
+        <h4 class="chart-title">Temporal Packet Delivery Ratio</h4>
+        <svg viewBox="0 0 {{ chart_w }} {{ chart_h }}" class="chart-svg" role="img" aria-label="Temporal packet delivery ratio">
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_pad_t + (temporal_inner_h * 0.5) }}" x2="{{ chart_pad_l }}" y2="{{ chart_pad_t + (temporal_inner_h * 0.5) }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_pad_t }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_h - chart_pad_b + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">0.00</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_pad_t + (temporal_inner_h * 0.5) + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">0.50</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_pad_t + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">1.00</text>
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t + (temporal_inner_h * 0.25) }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_pad_t + (temporal_inner_h * 0.25) }}" stroke="{{ grid_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t + (temporal_inner_h * 0.5) }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_pad_t + (temporal_inner_h * 0.5) }}" stroke="{{ grid_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t + (temporal_inner_h * 0.75) }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_pad_t + (temporal_inner_h * 0.75) }}" stroke="{{ grid_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b + 4 }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l + (temporal_mid * temporal_step) }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l + (temporal_mid * temporal_step) }}" y2="{{ chart_h - chart_pad_b + 4 }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_w - chart_pad_r }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b + 4 }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <text x="{{ chart_pad_l }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="start">{{ temporal[0].start_ms }} ms</text>
+          <text x="{{ chart_pad_l + (temporal_mid * temporal_step) }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="middle">{{ temporal[temporal_mid].start_ms }} ms</text>
+          <text x="{{ chart_w - chart_pad_r }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ temporal[-1].end_ms }} ms</text>
+          <polyline points="{% for item in temporal %}{% set x = chart_pad_l + loop.index0 * temporal_step %}{% set y = chart_h - chart_pad_b - ((item.pdr / temporal_max_pdr) * temporal_inner_h) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_primary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+          {% for item in temporal %}
+          {% set x = chart_pad_l + loop.index0 * temporal_step %}
+          {% set y = chart_h - chart_pad_b - ((item.pdr / temporal_max_pdr) * temporal_inner_h) %}
+          <circle cx="{{ '%.2f' | format(x) }}" cy="{{ '%.2f' | format(y) }}" r="2.8" fill="{{ c_primary }}" />
+          {% endfor %}
+        </svg>
+      </div>
+      {% endif %}
+      <div class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>Time Bin ms</th>
+              <th>Packets</th>
+              <th>Accepted</th>
+              <th>Avg RSSI</th>
+              <th>Avg LQI</th>
+              <th>PDR</th>
+              <th>PER</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in temporal %}
+            <tr>
+              <td>[{{ item.start_ms }}, {{ item.end_ms }})</td>
+              <td>{{ item.total_packets }}</td>
+              <td>{{ item.accepted_packets }}</td>
+              <td>{{ '%.2f' | format(item.avg_rssi_dbm) }}</td>
+              <td>{{ ('%.1f' | format(item.avg_lqi)) if item.avg_lqi is not none else '-' }}</td>
+              <td>{{ '%.3f' | format(item.pdr) }}</td>
+              <td>{{ '%.3f' | format(item.per) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="muted">No temporal quality bins available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
       <div class="table-shell">
         <table>
-          <thead><tr><th>Timestamp</th><th>Source</th><th>Type</th><th>Summary</th></tr></thead>
-          <tbody>
-            {% for item in merge.session_events %}
+          <thead>
             <tr>
-              <td>{{ item.corrected_timestamp or item.local_timestamp or "-" }}</td>
-              <td>{{ describe_source(item.source_type, item.source_ref, host_labels) }}</td>
-              <td>{{ item.event_type | humanize_token }}</td>
-              <td>{{ render_summary(summarize_event_payload(item.event_type, item.payload)) }}</td>
+              <th>t ms</th>
+              <th>Window Packets</th>
+              <th>Rolling PDR</th>
+              <th>Rolling PER</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in rolling %}
+            <tr>
+              <td>{{ item.t_ms }}</td>
+              <td>{{ item.window_packets }}</td>
+              <td>{{ '%.3f' | format(item.pdr) }}</td>
+              <td>{{ '%.3f' | format(item.per) }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="4" class="muted">No session events.</td></tr>
+            <tr><td colspan="4" class="muted">Not enough packet samples for rolling-window reliability.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if rolling %}
+      {% set rolling_inner_w = chart_w - chart_pad_l - chart_pad_r %}
+      {% set rolling_inner_h = chart_h - chart_pad_t - chart_pad_b %}
+      {% set rolling_count = rolling | length %}
+      {% set rolling_step = rolling_inner_w / ((rolling_count - 1) if rolling_count > 1 else 1) %}
+      {% set rolling_mid = ((rolling_count - 1) / 2) | round(0, 'floor') | int %}
+      <div class="chart-shell">
+        <h4 class="chart-title">Rolling Reliability (PDR)</h4>
+        <svg viewBox="0 0 {{ chart_w }} {{ chart_h }}" class="chart-svg" role="img" aria-label="Rolling packet delivery ratio">
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_pad_t + (rolling_inner_h * 0.5) }}" x2="{{ chart_pad_l }}" y2="{{ chart_pad_t + (rolling_inner_h * 0.5) }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_pad_t }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_h - chart_pad_b + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">0.00</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_pad_t + (rolling_inner_h * 0.5) + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">0.50</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_pad_t + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">1.00</text>
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b + 4 }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l + (rolling_mid * rolling_step) }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l + (rolling_mid * rolling_step) }}" y2="{{ chart_h - chart_pad_b + 4 }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_w - chart_pad_r }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b + 4 }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <text x="{{ chart_pad_l }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="start">{{ rolling[0].t_ms }} ms</text>
+          <text x="{{ chart_pad_l + (rolling_mid * rolling_step) }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="middle">{{ rolling[rolling_mid].t_ms }} ms</text>
+          <text x="{{ chart_w - chart_pad_r }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ rolling[-1].t_ms }} ms</text>
+          <polyline points="{% for item in rolling %}{% set x = chart_pad_l + loop.index0 * rolling_step %}{% set y = chart_h - chart_pad_b - (item.pdr * rolling_inner_h) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_secondary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>3. Packet Timing and Stability</h3>
+      </div>
+      {% if inter_arrival_hist %}
+      {% set delta_max = inter_arrival_hist | map(attribute='count') | max %}
+      {% set delta_mid = (delta_max / 2) | round(0, 'floor') %}
+      {% set delta_inner_w = chart_w - chart_pad_l - chart_pad_r %}
+      {% set delta_inner_h = chart_h - chart_pad_t - chart_pad_b %}
+      {% set delta_slot_w = delta_inner_w / (inter_arrival_hist | length) %}
+      {% set delta_mid_idx = ((inter_arrival_hist | length - 1) / 2) | round(0, 'floor') | int %}
+      <div class="chart-shell">
+        <h4 class="chart-title">Inter-arrival Histogram</h4>
+        <svg viewBox="0 0 {{ chart_w }} {{ chart_h }}" class="chart-svg" role="img" aria-label="Inter-arrival histogram">
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_h - chart_pad_b - (delta_inner_h / 2) }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b - (delta_inner_h / 2) }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_pad_t }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_h - chart_pad_b + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">0</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_h - chart_pad_b - (delta_inner_h / 2) + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ delta_mid }}</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_pad_t + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ delta_max }}</text>
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b + 4 }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l + (delta_mid_idx * delta_slot_w) }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l + (delta_mid_idx * delta_slot_w) }}" y2="{{ chart_h - chart_pad_b + 4 }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_w - chart_pad_r }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b + 4 }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <text x="{{ chart_pad_l }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="start">{{ inter_arrival_hist[0].delta_start_ms }} ms</text>
+          <text x="{{ chart_pad_l + (delta_mid_idx * delta_slot_w) }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="middle">{{ inter_arrival_hist[delta_mid_idx].delta_start_ms }} ms</text>
+          <text x="{{ chart_w - chart_pad_r }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ inter_arrival_hist[-1].delta_end_ms }} ms</text>
+          {% for item in inter_arrival_hist %}
+          {% set bar_h = (item.count / delta_max) * delta_inner_h if delta_max > 0 else 0 %}
+          {% set bar_x = chart_pad_l + loop.index0 * delta_slot_w + (delta_slot_w * 0.15) %}
+          {% set bar_y = chart_h - chart_pad_b - bar_h %}
+          {% set bar_w = delta_slot_w * 0.7 %}
+          <rect x="{{ '%.2f' | format(bar_x) }}" y="{{ '%.2f' | format(bar_y) }}" width="{{ '%.2f' | format(bar_w) }}" height="{{ '%.2f' | format(bar_h) }}" fill="{{ c_secondary }}" />
+          {% endfor %}
+        </svg>
+      </div>
+      {% endif %}
+      <div class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>Inter-arrival Bin ms</th>
+              <th>Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in inter_arrival_hist %}
+            <tr>
+              <td>[{{ item.delta_start_ms }}, {{ item.delta_end_ms }})</td>
+              <td>{{ item.count }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="2" class="muted">No inter-arrival histogram available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>t ms</th>
+              <th>Inter-arrival ms</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in inter_arrival_points %}
+            <tr>
+              <td>{{ item.t_ms }}</td>
+              <td>{{ item.delta_ms }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="2" class="muted">No inter-arrival timeline available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>4. Noise and RF Environment</h3>
+      </div>
+      {% if rssi_distribution %}
+      {% set rssi_max_count = rssi_distribution | map(attribute='count') | max %}
+      {% set rssi_mid_count = (rssi_max_count / 2) | round(0, 'floor') %}
+      {% set rssi_inner_w = chart_w - chart_pad_l - chart_pad_r %}
+      {% set rssi_inner_h = chart_h - chart_pad_t - chart_pad_b %}
+      {% set rssi_slot_w = rssi_inner_w / (rssi_distribution | length) %}
+      <div class="chart-shell">
+        <h4 class="chart-title">RSSI Distribution</h4>
+        <svg viewBox="0 0 {{ chart_w }} {{ chart_h }}" class="chart-svg" role="img" aria-label="RSSI distribution histogram">
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_h - chart_pad_b - (rssi_inner_h / 2) }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b - (rssi_inner_h / 2) }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_pad_t }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_h - chart_pad_b + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">0</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_h - chart_pad_b - (rssi_inner_h / 2) + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ rssi_mid_count }}</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_pad_t + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ rssi_max_count }}</text>
+          {% for item in rssi_distribution %}
+          {% set bar_h = (item.count / rssi_max_count) * rssi_inner_h if rssi_max_count > 0 else 0 %}
+          {% set bar_x = chart_pad_l + loop.index0 * rssi_slot_w + (rssi_slot_w * 0.15) %}
+          {% set bar_y = chart_h - chart_pad_b - bar_h %}
+          {% set bar_w = rssi_slot_w * 0.7 %}
+          <rect x="{{ '%.2f' | format(bar_x) }}" y="{{ '%.2f' | format(bar_y) }}" width="{{ '%.2f' | format(bar_w) }}" height="{{ '%.2f' | format(bar_h) }}" fill="{{ c_tertiary }}" />
+          <text x="{{ '%.2f' | format(bar_x + bar_w / 2) }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="middle">{{ item.rssi_start_dbm }}</text>
+          {% endfor %}
+        </svg>
+      </div>
+      {% endif %}
+      <div class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>RSSI Bin (dBm)</th>
+              <th>Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in rssi_distribution %}
+            <tr>
+              <td>[{{ item.rssi_start_dbm }}, {{ item.rssi_end_dbm }})</td>
+              <td>{{ item.count }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="2" class="muted">No RSSI distribution samples available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>6. System-Level Performance</h3>
+      </div>
+      {% if throughput %}
+      {% set throughput_max = throughput | map(attribute='bits_per_sec') | max %}
+      {% set tp_inner_w = chart_w - chart_pad_l - chart_pad_r %}
+      {% set tp_inner_h = chart_h - chart_pad_t - chart_pad_b %}
+      {% set tp_count = throughput | length %}
+      {% set tp_step = tp_inner_w / ((tp_count - 1) if tp_count > 1 else 1) %}
+      {% set tp_mid = ((tp_count - 1) / 2) | round(0, 'floor') | int %}
+      {% set tp_max = throughput_max | round(0, 'floor') %}
+      {% set tp_mid_val = (throughput_max / 2) | round(0, 'floor') %}
+      <div class="chart-shell">
+        <h4 class="chart-title">Throughput Timeline</h4>
+        <svg viewBox="0 0 {{ chart_w }} {{ chart_h }}" class="chart-svg" role="img" aria-label="Throughput timeline">
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_pad_t + (tp_inner_h / 2) }}" x2="{{ chart_pad_l }}" y2="{{ chart_pad_t + (tp_inner_h / 2) }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l - 4 }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_pad_t }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_h - chart_pad_b + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">0</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_pad_t + (tp_inner_h / 2) + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ tp_mid_val }}</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_pad_t + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ tp_max }}</text>
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b + 4 }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l + (tp_mid * tp_step) }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_pad_l + (tp_mid * tp_step) }}" y2="{{ chart_h - chart_pad_b + 4 }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_w - chart_pad_r }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b + 4 }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <text x="{{ chart_pad_l }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="start">{{ throughput[0].start_ms }} ms</text>
+          <text x="{{ chart_pad_l + (tp_mid * tp_step) }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="middle">{{ throughput[tp_mid].start_ms }} ms</text>
+          <text x="{{ chart_w - chart_pad_r }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ throughput[-1].end_ms }} ms</text>
+          <polyline points="{% for item in throughput %}{% set x = chart_pad_l + loop.index0 * tp_step %}{% set y = chart_h - chart_pad_b - (((item.bits_per_sec / throughput_max) if throughput_max > 0 else 0) * tp_inner_h) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_tertiary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+      {% endif %}
+      <div class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>Time Bin ms</th>
+              <th>Source</th>
+              <th>Packets</th>
+              <th>Bytes</th>
+              <th>Throughput bps</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in throughput %}
+            <tr>
+              <td>[{{ item.start_ms }}, {{ item.end_ms }})</td>
+              <td>{{ item.source | humanize_token }}</td>
+              <td>{{ item.packet_count }}</td>
+              <td>{{ item.bytes }}</td>
+              <td>{{ '%.1f' | format(item.bits_per_sec) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="muted">No throughput timeline available.</td></tr>
             {% endfor %}
           </tbody>
         </table>

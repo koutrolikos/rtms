@@ -17,6 +17,49 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Test-RequiredCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+    return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
+}
+
+function Show-MissingDependencyHelp {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Missing
+    )
+
+    $missingText = $Missing -join ', '
+    Write-Error "Missing required tools: $missingText"
+    Write-Host ''
+    Write-Host 'Install missing tools manually and re-run this script.'
+    Write-Host 'Suggested winget commands:'
+    Write-Host '  winget install -e --id Python.Python.3.11'
+    Write-Host '  winget install -e --id Git.Git'
+    Write-Host '  winget install -e --id xpack-dev-tools.OpenOCD'
+    Write-Host '  winget install -e --id Kitware.CMake'
+    Write-Host 'Build tool note: install Arm GNU Toolchain if your firmware flow needs arm-none-eabi-gcc.'
+}
+
+function Install-MissingDependencies {
+    param(
+        [Parameter(Mandatory = $true)]
+        [array]$MissingDeps
+    )
+
+    if (-not (Test-RequiredCommand -Name 'winget')) {
+        Show-MissingDependencyHelp -Missing ($MissingDeps | ForEach-Object { $_.Name })
+        throw 'winget is required to auto-install missing dependencies'
+    }
+
+    foreach ($dep in $MissingDeps) {
+        Write-Host "Installing missing dependency: $($dep.Name)"
+        winget install -e --id $dep.PackageId --accept-package-agreements --accept-source-agreements
+    }
+}
+
 if ($InstallBuildTools -eq 'auto') {
     if ($Mode -eq 'full' -or $Mode -eq 'build-only') {
         $InstallBuildTools = 'true'
@@ -44,18 +87,47 @@ switch ($Mode) {
     }
 }
 
-Write-Host '[1/5] Installing required tools via winget'
-winget install -e --id Python.Python.3.11 --accept-package-agreements --accept-source-agreements
-winget install -e --id Git.Git --accept-package-agreements --accept-source-agreements
-winget install -e --id xpack-dev-tools.OpenOCD --accept-package-agreements --accept-source-agreements
-
+Write-Host '[1/4] Checking required tools'
+$missing = @()
+if (-not (Test-RequiredCommand -Name 'git')) {
+    $missing += @{ Name = 'git'; PackageId = 'Git.Git' }
+}
+if (-not (Test-RequiredCommand -Name 'py')) {
+    $missing += @{ Name = 'py (Python launcher)'; PackageId = 'Python.Python.3.11' }
+}
+if ($FlashCapable -eq 1 -or $CaptureCapable -eq 1) {
+    if (-not (Test-RequiredCommand -Name 'openocd')) {
+        $missing += @{ Name = 'openocd'; PackageId = 'xpack-dev-tools.OpenOCD' }
+    }
+}
 if ($InstallBuildTools -eq 'true') {
-    winget install -e --id Kitware.CMake --accept-package-agreements --accept-source-agreements
-    Write-Host 'Build tools note: install ARM GCC toolchain if your firmware recipe needs it.'
-    Write-Host 'Example: Arm GNU Toolchain from Arm (arm-none-eabi-gcc)'
+    if (-not (Test-RequiredCommand -Name 'cmake')) {
+        $missing += @{ Name = 'cmake'; PackageId = 'Kitware.CMake' }
+    }
 }
 
-Write-Host '[2/5] Cloning or updating RTMS repo'
+if ($missing.Count -gt 0) {
+    Install-MissingDependencies -MissingDeps $missing
+}
+
+if (-not (Test-RequiredCommand -Name 'git')) {
+    throw 'git is still missing after dependency installation'
+}
+if (-not (Test-RequiredCommand -Name 'py')) {
+    throw 'Python launcher (py) is still missing after dependency installation'
+}
+if ($FlashCapable -eq 1 -or $CaptureCapable -eq 1) {
+    if (-not (Test-RequiredCommand -Name 'openocd')) {
+        throw 'openocd is still missing after dependency installation'
+    }
+}
+if ($InstallBuildTools -eq 'true') {
+    if (-not (Test-RequiredCommand -Name 'cmake')) {
+        throw 'cmake is still missing after dependency installation'
+    }
+}
+
+Write-Host '[2/4] Cloning or updating RTMS repo'
 if (Test-Path "$InstallDir\.git") {
     git -C $InstallDir fetch --all --tags
     git -C $InstallDir pull --ff-only
@@ -64,12 +136,7 @@ else {
     git clone $RepoUrl $InstallDir
 }
 
-Write-Host '[3/5] Creating virtualenv and installing package'
-py -3.11 -m venv "$InstallDir\.venv"
-& "$InstallDir\.venv\Scripts\python.exe" -m pip install --upgrade pip
-& "$InstallDir\.venv\Scripts\python.exe" -m pip install -e $InstallDir
-
-Write-Host '[4/5] Writing agent env file'
+Write-Host '[3/4] Writing agent env file'
 $envFile = "$InstallDir\.agent-env.ps1"
 @"
 `$env:RANGE_TEST_INSTALL_DIR = '$InstallDir'
@@ -82,7 +149,7 @@ $envFile = "$InstallDir\.agent-env.ps1"
 `$env:RANGE_TEST_AGENT_CAPTURE_CAPABLE = '$CaptureCapable'
 "@ | Set-Content -Path $envFile -Encoding UTF8
 
-Write-Host '[5/5] Basic connectivity check'
+Write-Host '[4/4] Basic connectivity check'
 try {
     Invoke-WebRequest -Uri "$ServerUrl/healthz" -UseBasicParsing -TimeoutSec 5 | Out-Null
     Write-Host 'healthz: OK'
@@ -95,6 +162,9 @@ Write-Host ''
 Write-Host 'Bootstrap complete.'
 Write-Host 'Next commands:'
 Write-Host "  cd $InstallDir"
+Write-Host '  py -3.11 -m venv .venv'
 Write-Host '  .\.venv\Scripts\Activate.ps1'
+Write-Host '  python -m pip install --upgrade pip'
+Write-Host '  pip install -e .'
 Write-Host '  . .\.agent-env.ps1'
-Write-Host '  range-test-agent run'
+Write-Host '  .\.venv\Scripts\range-test-agent.exe run'

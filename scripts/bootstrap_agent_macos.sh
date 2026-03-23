@@ -21,7 +21,7 @@ Required:
 
 Options:
   --mode MODE                 full | build-only | flash-capture (default: full)
-  --install-build-tools BOOL  true | false | auto (default: auto)
+  --install-build-tools BOOL  true | false | auto (default: auto, controls build-tool dependency checks)
   --repo-url URL              RTMS git URL (default: https://github.com/koutrolikos/rtms.git)
   --install-dir PATH          Install path (default: ~/rtms-agent)
   --openocd-target-cfg CFG    OpenOCD target cfg (default: target/stm32g4x.cfg)
@@ -97,6 +97,16 @@ ensure_install_target_ready() {
   fi
 }
 
+missing_deps=()
+missing_brew_packages=()
+
+record_missing_cmd() {
+  local cmd="$1"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    missing_deps+=("$cmd")
+  fi
+}
+
 find_brew() {
   if command -v brew >/dev/null 2>&1; then
     command -v brew
@@ -110,7 +120,17 @@ find_brew() {
     printf '%s\n' "/usr/local/bin/brew"
     return
   fi
-  die "Homebrew is required but brew was not found on PATH or in the standard install locations"
+  die "missing required command: brew (install Homebrew first: https://brew.sh)"
+}
+
+install_missing_brew_deps() {
+  local brew_bin="$1"
+  if [[ "${#missing_brew_packages[@]}" -eq 0 ]]; then
+    return
+  fi
+
+  echo "Installing missing Homebrew packages: ${missing_brew_packages[*]}"
+  "$brew_bin" install "${missing_brew_packages[@]}"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -227,6 +247,10 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
+if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+  die "do not run with sudo; run as a normal user"
+fi
+
 require_cmd xcode-select
 if ! xcode-select -p >/dev/null 2>&1; then
   echo "error: Xcode Command Line Tools are required." >&2
@@ -234,23 +258,55 @@ if ! xcode-select -p >/dev/null 2>&1; then
   exit 1
 fi
 
-BREW_BIN="$(find_brew)"
-
-BASE_PACKAGES=(python@3.11 git openocd)
-BUILD_PACKAGES=(cmake make)
-
-echo "[1/6] Installing Homebrew packages"
-"$BREW_BIN" update
-"$BREW_BIN" install "${BASE_PACKAGES[@]}"
+echo "[1/4] Checking required tools"
+if ! command -v git >/dev/null 2>&1; then
+  missing_deps+=("git")
+  missing_brew_packages+=("git")
+fi
+if ! command -v python3.11 >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
+  missing_deps+=("python3.11-or-python3")
+  missing_brew_packages+=("python@3.11")
+fi
+if [[ "$FLASH_CAPABLE" -eq 1 || "$CAPTURE_CAPABLE" -eq 1 ]]; then
+  if ! command -v openocd >/dev/null 2>&1; then
+    missing_deps+=("openocd")
+    missing_brew_packages+=("openocd")
+  fi
+fi
 if [[ "$INSTALL_BUILD_TOOLS" == "true" ]]; then
-  "$BREW_BIN" install "${BUILD_PACKAGES[@]}"
-  if ! "$BREW_BIN" install arm-none-eabi-gcc; then
-    echo "warning: could not install arm-none-eabi-gcc via Homebrew." >&2
-    echo "warning: install the ARM GNU toolchain manually if build jobs require it." >&2
+  if ! command -v cmake >/dev/null 2>&1; then
+    missing_deps+=("cmake")
+    missing_brew_packages+=("cmake")
+  fi
+  if ! command -v make >/dev/null 2>&1; then
+    missing_deps+=("make")
+    missing_brew_packages+=("make")
+  fi
+  if ! command -v arm-none-eabi-gcc >/dev/null 2>&1; then
+    missing_deps+=("arm-none-eabi-gcc")
+    missing_brew_packages+=("arm-none-eabi-gcc")
   fi
 fi
 
-echo "[2/6] Cloning or updating RTMS repo"
+if [[ "${#missing_deps[@]}" -gt 0 ]]; then
+  BREW_BIN="$(find_brew)"
+  install_missing_brew_deps "$BREW_BIN"
+fi
+
+require_cmd git
+if ! command -v python3.11 >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
+  die "missing required command: python3.11 or python3"
+fi
+if [[ "$FLASH_CAPABLE" -eq 1 || "$CAPTURE_CAPABLE" -eq 1 ]]; then
+  require_cmd openocd
+fi
+if [[ "$INSTALL_BUILD_TOOLS" == "true" ]]; then
+  require_cmd cmake
+  require_cmd make
+  require_cmd arm-none-eabi-gcc
+fi
+
+echo "[2/4] Cloning or updating RTMS repo"
 ensure_install_target_ready
 mkdir -p "$(dirname "$INSTALL_DIR")"
 if [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -260,24 +316,9 @@ else
   git clone "$REPO_URL" "$INSTALL_DIR"
 fi
 
-echo "[3/6] Creating Python virtualenv and installing package"
-PYTHON_BIN=""
-if command -v python3.11 >/dev/null 2>&1; then
-  PYTHON_BIN="$(command -v python3.11)"
-elif command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN="$(command -v python3)"
-else
-  echo "error: python3.11 or python3 not found after installation" >&2
-  exit 1
-fi
-"$PYTHON_BIN" -m venv "$INSTALL_DIR/.venv"
-"$INSTALL_DIR/.venv/bin/pip" install --upgrade pip
-"$INSTALL_DIR/.venv/bin/pip" install -e "$INSTALL_DIR"
-
-echo "[4/6] Writing agent env file"
+echo "[3/4] Writing agent env file"
 ENV_FILE="$INSTALL_DIR/.agent-env.sh"
 cat > "$ENV_FILE" <<ENVVARS
-export PATH="$INSTALL_DIR/.venv/bin:\$PATH"
 export RANGE_TEST_INSTALL_DIR="$INSTALL_DIR"
 export RANGE_TEST_SERVER_URL="$SERVER_URL"
 export RANGE_TEST_AGENT_DATA_DIR="$INSTALL_DIR/agent_data"
@@ -288,49 +329,7 @@ export RANGE_TEST_AGENT_FLASH_CAPABLE=$FLASH_CAPABLE
 export RANGE_TEST_AGENT_CAPTURE_CAPABLE=$CAPTURE_CAPABLE
 ENVVARS
 
-echo "[5/6] Installing command shims"
-WRAPPER_DIR="$HOME/.local/bin"
-mkdir -p "$WRAPPER_DIR"
-
-cat > "$WRAPPER_DIR/range-test-server" <<SHIM
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ -f "$INSTALL_DIR/.agent-env.sh" ]]; then
-  source "$INSTALL_DIR/.agent-env.sh"
-fi
-if [[ "\${1:-}" == "run" ]]; then
-  shift
-fi
-exec "$INSTALL_DIR/.venv/bin/range-test-server" "\$@"
-SHIM
-
-cat > "$WRAPPER_DIR/range-test-agent" <<SHIM
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ -f "$INSTALL_DIR/.agent-env.sh" ]]; then
-  source "$INSTALL_DIR/.agent-env.sh"
-fi
-exec "$INSTALL_DIR/.venv/bin/range-test-agent" "\$@"
-SHIM
-
-chmod +x "$WRAPPER_DIR/range-test-server" "$WRAPPER_DIR/range-test-agent"
-
-SHELL_RC="$HOME/.profile"
-if [[ "${SHELL:-}" == *"zsh" ]]; then
-  SHELL_RC="$HOME/.zshrc"
-elif [[ "${SHELL:-}" == *"bash" ]]; then
-  SHELL_RC="$HOME/.bashrc"
-fi
-PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
-if [[ -f "$SHELL_RC" ]]; then
-  if ! grep -Fq "$PATH_LINE" "$SHELL_RC"; then
-    printf "\n%s\n" "$PATH_LINE" >> "$SHELL_RC"
-  fi
-else
-  printf "%s\n" "$PATH_LINE" > "$SHELL_RC"
-fi
-
-echo "[6/6] Basic connectivity check"
+echo "[4/4] Basic connectivity check"
 if command -v curl >/dev/null 2>&1; then
   if curl --max-time 5 --silent --fail "$SERVER_URL/healthz" >/dev/null; then
     echo "healthz: OK"
@@ -343,8 +342,14 @@ cat <<'DONE'
 
 Bootstrap complete.
 
-Open a new terminal, then run:
-  range-test-server run
-  range-test-agent run
+Next commands:
+  cd "$INSTALL_DIR"
+  python3.11 -m venv .venv   # or: python3 -m venv .venv
+  source .venv/bin/activate
+  pip install --upgrade pip
+  pip install -e .
+  source .agent-env.sh
+  ./.venv/bin/range-test-server run
+  ./.venv/bin/range-test-agent run
 
 DONE

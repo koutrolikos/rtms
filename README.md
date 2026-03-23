@@ -1,17 +1,31 @@
 # RTMS
 
-## Start Here (New User)
+## Fresh Install (Step By Step)
 
-Do these first, in this order:
+Use these commands exactly, in order.
 
-1. Clone the repo.
-2. Enter the repo folder.
-3. Run one bootstrap script for your OS.
+### 1) Pick your server URL
+
+Example used below:
+
+- `http://172.20.10.3:8000`
+
+### 2) Clone RTMS
 
 ```bash
 git clone https://github.com/koutrolikos/rtms.git
 cd rtms
 ```
+
+### 3) Run the bootstrap script for your OS
+
+What bootstrap does now:
+
+- checks required dependencies
+- installs missing dependencies
+- clones/updates RTMS into `~/rtms-agent`
+- writes runtime env file (`.agent-env.sh` or `.agent-env.ps1`)
+- does not create a virtual environment
 
 macOS:
 
@@ -31,8 +45,70 @@ Windows PowerShell:
 .\scripts\bootstrap_agent_windows.ps1 -ServerUrl http://172.20.10.3:8000
 ```
 
-The script installs dependencies and prepares Python.
-On macOS/Linux it also installs command shims, so after it finishes you can open a new terminal and run `range-test-server run` or `range-test-agent run` directly.
+### 4) Create venv and install RTMS package
+
+macOS:
+
+```bash
+cd ~/rtms-agent
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -e .
+source .agent-env.sh
+```
+
+Linux:
+
+```bash
+cd ~/rtms-agent
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -e .
+source .agent-env.sh
+```
+
+Windows PowerShell:
+
+```powershell
+cd ~/rtms-agent
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e .
+. .\.agent-env.ps1
+```
+
+### 5) Run
+
+Start agent:
+
+macOS/Linux:
+
+```bash
+./.venv/bin/range-test-agent run
+```
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\range-test-agent.exe run
+```
+
+Start server (optional on this host):
+
+macOS/Linux:
+
+```bash
+./.venv/bin/range-test-server run
+```
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\range-test-server.exe run
+```
 
 Distributed RF range-test orchestration MVP with:
 
@@ -43,110 +119,7 @@ Distributed RF range-test orchestration MVP with:
 - capture coordination across TX/RX hosts
 - raw-log preservation, parsing, merge, and HTML report generation
 
-## Zero To Agent (Copy-Paste Edition)
-
-If you have a fresh machine and want to run an agent with minimal thinking, use this.
-
-### 0) One-command bootstrap scripts (recommended)
-
-Linux:
-
-```bash
-./scripts/bootstrap_agent_linux.sh --server-url http://172.20.10.3:8000
-```
-
-macOS:
-
-```bash
-./scripts/bootstrap_agent_macos.sh --server-url http://172.20.10.3:8000
-```
-
-Windows PowerShell:
-
-```powershell
-.\scripts\bootstrap_agent_windows.ps1 -ServerUrl http://172.20.10.3:8000
-```
-
-All scripts install dependencies, clone/update RTMS into `~/rtms-agent`, create a venv,
-install the package, write an env file, and pin runtime data under that install directory
-by default instead of the caller's current working directory.
-
-### 1) Pick your server URL
-
-This is the RTMS server address agents will call, for example:
-
-- `http://172.20.10.3:8000` (LAN)
-- `http://172.20.10.3:8000` (LAN)
-
-Do not use `https://` unless your server is actually configured for TLS.
-
-### 2) Linux (fresh machine)
-
-Ubuntu/Debian:
-
-```bash
-sudo apt update
-sudo apt install -y python3 python3-venv python3-pip git curl openocd make cmake gcc-arm-none-eabi
-
-git clone https://github.com/koutrolikos/rtms.git
-cd rtms
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-
-export RANGE_TEST_SERVER_URL="http://172.20.10.3:8000"
-export RANGE_TEST_OPENOCD_TARGET_CFG="target/stm32g4x.cfg"
-range-test-agent run
-```
-
-Fedora/RHEL:
-
-```bash
-sudo dnf install -y python3 python3-pip git curl openocd make cmake arm-none-eabi-gcc-cs
-
-git clone https://github.com/koutrolikos/rtms.git
-cd rtms
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-
-export RANGE_TEST_SERVER_URL="http://172.20.10.3:8000"
-export RANGE_TEST_OPENOCD_TARGET_CFG="target/stm32g4x.cfg"
-range-test-agent run
-```
-
-### 3) Windows (fresh machine, PowerShell)
-
-Install tools (Winget):
-
-```powershell
-winget install -e --id Python.Python.3.11
-winget install -e --id Git.Git
-winget install -e --id xpack-dev-tools.OpenOCD
-```
-
-Then:
-
-```powershell
-git clone https://github.com/koutrolikos/rtms.git
-cd rtms
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e .
-
-$env:RANGE_TEST_SERVER_URL = "http://172.20.10.3:8000"
-$env:RANGE_TEST_OPENOCD_TARGET_CFG = "target/stm32g4x.cfg"
-range-test-agent run
-```
-
-If OpenOCD is installed but not on PATH:
-
-```powershell
-$env:RANGE_TEST_OPENOCD_BIN = "C:\openocd\xpack-openocd-0.12.0-7\bin\openocd.exe"
-$env:OPENOCD_SCRIPTS = "C:\openocd\xpack-openocd-0.12.0-7\openocd\scripts"
-```
-
-### 4) One command sanity check
+## One Command Sanity Check
 
 From the agent machine:
 
@@ -226,7 +199,7 @@ By default, the bootstrap-generated env file pins:
 If you do a manual editable install instead of bootstrap, set those explicitly if you do
 not want runtime data created relative to the directory where you launch the command.
 
-3. Start an agent:
+1. Start an agent:
 
 ```bash
 export RANGE_TEST_SERVER_URL="http://172.20.10.3:8000"

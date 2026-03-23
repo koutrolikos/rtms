@@ -2498,3 +2498,708 @@ textarea:focus-visible {
     width: 100%;
   }
 }
+
+/* Session detail visual refresh: clearer hierarchy, stronger cards, and faster scanability. */
+:root {
+  --session-surface: rgba(255, 255, 255, 0.92);
+  --session-surface-strong: rgba(255, 255, 255, 0.98);
+  --session-border: rgba(10, 28, 46, 0.14);
+  --session-shadow: 0 14px 34px rgba(9, 29, 48, 0.08);
+  --session-shadow-soft: 0 7px 18px rgba(9, 29, 48, 0.06);
+}
+
+html[data-theme="dark"] {
+  --session-surface: rgba(15, 21, 28, 0.92);
+  --session-surface-strong: rgba(19, 26, 34, 0.98);
+  --session-border: rgba(127, 167, 206, 0.2);
+  --session-shadow: 0 16px 38px rgba(0, 0, 0, 0.28);
+  --session-shadow-soft: 0 8px 22px rgba(0, 0, 0, 0.24);
+}
+
+.session-screen {
+  gap: 1rem;
+}
+
+.session-screen .session-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--session-border);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 82% 20%, rgba(0, 106, 220, 0.12), transparent 38%),
+    radial-gradient(circle at 12% -8%, rgba(40, 121, 79, 0.12), transparent 44%),
+    linear-gradient(180deg, var(--session-surface-strong), var(--session-surface));
+  box-shadow: var(--session-shadow);
+}
+
+.session-screen .session-hero::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(0, 106, 220, 0.65), rgba(40, 121, 79, 0.65));
+}
+
+.session-screen .overview-card,
+.session-screen .panel,
+.session-screen .pipeline-stage,
+.session-screen .sidebar-entry,
+.session-screen .run-role-card,
+.session-screen .run-readiness-item,
+.session-screen .table-shell {
+  border-color: var(--session-border);
+}
+
+.session-screen .session-overview-strip {
+  gap: 0.7rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.session-screen .session-overview-strip .overview-card {
+  border-radius: 15px;
+  border: 1px solid var(--session-border);
+  padding: 0.9rem 1rem;
+  background: linear-gradient(180deg, var(--session-surface-strong), var(--session-surface));
+  box-shadow: var(--session-shadow-soft);
+}
+
+.session-screen .overview-label {
+  font-size: 0.72rem;
+}
+
+.session-screen .overview-value {
+  font-size: 1.04rem;
+  font-weight: 600;
+}
+
+.session-pipeline-nav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.session-pipeline-nav .pipeline-nav-button {
+  padding: 0.8rem 0.9rem;
+  border-radius: 14px;
+  border: 1px solid var(--session-border);
+  background: linear-gradient(180deg, var(--session-surface-strong), var(--session-surface));
+  box-shadow: var(--session-shadow-soft);
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.session-pipeline-nav .pipeline-nav-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 106, 220, 0.28);
+  box-shadow: var(--session-shadow);
+}
+
+.session-pipeline-nav .pipeline-nav-button.active,
+.session-pipeline-nav .pipeline-nav-button.focused {
+  border-color: rgba(0, 106, 220, 0.36);
+  background:
+    linear-gradient(180deg, rgba(248, 252, 255, 0.98), rgba(238, 247, 255, 0.96));
+}
+
+.session-pipeline-nav .pipeline-nav-button.complete .pipeline-nav-step {
+  border-color: rgba(40, 121, 79, 0.28);
+  background: rgba(40, 121, 79, 0.14);
+}
+
+.session-pipeline-nav .pipeline-nav-copy strong {
+  font-weight: 640;
+}
+
+.session-pipeline-nav .pipeline-nav-copy small {
+  font-size: 0.79rem;
+}
+
+.session-screen .session-layout {
+  gap: 0.95rem;
+}
+
+.session-screen .pipeline-stage {
+  padding: 0.9rem 1rem 1rem;
+  border: 1px solid var(--session-border);
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--session-surface-strong), var(--session-surface));
+  box-shadow: var(--session-shadow-soft);
+}
+
+.session-screen .pipeline-stage[data-stage-status="active"] {
+  border-color: rgba(0, 106, 220, 0.28);
+  box-shadow: var(--session-shadow);
+}
+
+.session-screen .pipeline-stage-head {
+  padding: 0;
+}
+
+.session-screen .pipeline-stage-toggle {
+  padding: 0;
+}
+
+.session-screen .pipeline-stage-body {
+  margin-top: 0.35rem;
+}
+
+.session-screen .panel {
+  border-radius: 14px;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--session-surface) 92%, white 8%);
+}
+
+.session-screen .panel-head {
+  border-bottom-color: color-mix(in srgb, var(--session-border) 85%, transparent 15%);
+}
+
+.session-screen .session-setup-panel .panel-section-grid {
+  gap: 0.9rem;
+}
+
+.session-screen .run-control-shell {
+  align-items: start;
+}
+
+.session-screen .run-control-actions button,
+.session-screen .run-control-actions .button {
+  min-width: 9.8rem;
+}
+
+.session-screen .table-shell {
+  border-radius: 14px;
+  background: var(--session-surface-strong);
+}
+
+.session-screen .table-shell table {
+  min-width: 760px;
+  table-layout: auto;
+}
+
+.session-screen .table-shell th,
+.session-screen .table-shell td {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.session-screen .table-shell td .summary-list div,
+.session-screen .table-shell td .muted {
+  white-space: normal;
+}
+
+.session-screen .sidebar-panel {
+  border: 1px solid var(--session-border);
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--session-surface-strong), var(--session-surface));
+}
+
+.session-screen .sidebar-stream {
+  gap: 0.6rem;
+}
+
+.session-screen .sidebar-entry {
+  background: color-mix(in srgb, var(--session-surface) 94%, white 6%);
+}
+
+.session-screen .timeline {
+  gap: 0.7rem;
+}
+
+.report-screen .table-shell table {
+  min-width: 760px;
+  table-layout: auto;
+}
+
+.report-screen .table-shell th,
+.report-screen .table-shell td {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.report-screen .table-shell td .summary-list div,
+.report-screen .table-shell td .muted {
+  white-space: normal;
+}
+
+.report-artifacts-stack {
+  gap: 0.75rem;
+}
+
+@media (max-width: 1100px) {
+  .session-pipeline-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .session-screen .session-overview-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .session-screen .session-hero {
+    border-radius: 16px;
+  }
+
+  .session-pipeline-nav,
+  .session-screen .session-overview-strip,
+  .session-screen .run-stage-grid,
+  .session-screen .run-role-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .session-screen .run-control-actions {
+    width: 100%;
+  }
+
+  .session-screen .run-control-actions form {
+    flex: 1 1 auto;
+  }
+
+  .session-screen .run-control-actions button,
+  .session-screen .run-control-actions .button {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Cross-page consistency layer aligned with the session page visual system. */
+.hosts-screen,
+.report-page,
+.new-session-page,
+.raw-artifacts-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.hosts-screen .hosts-header,
+.report-page .report-page-hero,
+.new-session-page .session-create-panel,
+.raw-artifacts-page .raw-artifacts-hero,
+.raw-artifacts-page .raw-artifacts-panel {
+  border: 1px solid var(--session-border);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 82% 20%, rgba(0, 106, 220, 0.12), transparent 38%),
+    radial-gradient(circle at 12% -8%, rgba(40, 121, 79, 0.1), transparent 44%),
+    linear-gradient(180deg, var(--session-surface-strong), var(--session-surface));
+  box-shadow: var(--session-shadow);
+}
+
+.hosts-screen .hosts-header,
+.report-page .report-page-hero,
+.raw-artifacts-page .raw-artifacts-hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.hosts-screen .hosts-header::after,
+.report-page .report-page-hero::after,
+.raw-artifacts-page .raw-artifacts-hero::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(0, 106, 220, 0.65), rgba(40, 121, 79, 0.65));
+}
+
+.hosts-screen .hosts-header {
+  padding: 1.05rem 1.1rem;
+  margin: 0;
+}
+
+.hosts-screen .hosts-overview-strip,
+.report-screen .report-overview-strip {
+  gap: 0.7rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.hosts-screen .hosts-overview-strip .overview-card,
+.report-screen .report-overview-strip .overview-card {
+  border: 1px solid var(--session-border);
+  border-radius: 15px;
+  padding: 0.9rem 1rem;
+  background: linear-gradient(180deg, var(--session-surface-strong), var(--session-surface));
+  box-shadow: var(--session-shadow-soft);
+}
+
+.hosts-screen .panel,
+.report-screen .panel,
+.new-session-page .panel,
+.raw-artifacts-page .panel,
+.raw-artifacts-page .hero {
+  border-color: var(--session-border);
+  border-radius: 16px;
+}
+
+.hosts-screen .host-card,
+.report-screen .panel,
+.raw-artifacts-page .raw-artifacts-panel {
+  background: color-mix(in srgb, var(--session-surface) 94%, white 6%);
+}
+
+.hosts-screen .table-shell,
+.report-screen .table-shell,
+.raw-artifacts-page .table-shell {
+  border: 1px solid var(--session-border);
+  border-radius: 14px;
+  background: var(--session-surface-strong);
+}
+
+.hosts-screen .table-shell table,
+.report-screen .table-shell table,
+.raw-artifacts-page .table-shell table {
+  min-width: 760px;
+  table-layout: auto;
+}
+
+.hosts-screen .table-shell th,
+.hosts-screen .table-shell td,
+.report-screen .table-shell th,
+.report-screen .table-shell td,
+.raw-artifacts-page .table-shell th,
+.raw-artifacts-page .table-shell td {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.report-screen .table-shell td .summary-list div,
+.report-screen .table-shell td .muted,
+.raw-artifacts-page .table-shell td .muted {
+  white-space: normal;
+}
+
+.new-session-page .session-create-panel {
+  padding: 1.2rem 1.25rem;
+}
+
+.raw-artifacts-page .raw-artifacts-hero {
+  padding: 1.05rem 1.1rem;
+}
+
+.raw-artifacts-page .raw-artifacts-hero h2,
+.report-page .report-page-hero h2,
+.new-session-page .session-create-panel .panel-head h2 {
+  letter-spacing: -0.03em;
+}
+
+@media (max-width: 1100px) {
+  .hosts-screen .hosts-overview-strip,
+  .report-screen .report-overview-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .hosts-screen .hosts-overview-strip,
+  .report-screen .report-overview-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .hosts-screen .hosts-header,
+  .report-page .report-page-hero,
+  .new-session-page .session-create-panel,
+  .raw-artifacts-page .raw-artifacts-hero,
+  .raw-artifacts-page .raw-artifacts-panel {
+    border-radius: 16px;
+  }
+}
+
+/* RF report clarity layer: summary-first hierarchy with expandable evidence. */
+.report-screen {
+  gap: 0.9rem;
+}
+
+.report-engineer-header {
+  border-radius: 18px;
+  border: 1px solid var(--session-border);
+  background:
+    radial-gradient(circle at 88% 24%, rgba(0, 106, 220, 0.12), transparent 36%),
+    radial-gradient(circle at 12% -10%, rgba(40, 121, 79, 0.1), transparent 44%),
+    linear-gradient(180deg, var(--session-surface-strong), var(--session-surface));
+}
+
+.report-engineer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.report-headline {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 106, 220, 0.28);
+  background: rgba(0, 106, 220, 0.12);
+  color: var(--accent);
+  padding: 0.26rem 0.62rem;
+  font-size: 0.76rem;
+  font-weight: 640;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.report-headline-reason {
+  margin: 0.1rem 0 0.65rem;
+}
+
+.report-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.report-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.7rem;
+  padding: 0.18rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--session-border) 82%, transparent 18%);
+  background: color-mix(in srgb, var(--session-surface-strong) 86%, var(--accent-soft) 14%);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.chart-shell {
+  margin: 0.2rem 0 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--session-border) 84%, transparent 16%);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--session-surface) 91%, white 9%);
+  padding: 0.52rem 0.58rem 0.48rem;
+}
+
+.chart-title {
+  margin: 0 0 0.38rem;
+  font-size: 0.83rem;
+  font-weight: 620;
+  color: var(--ink-soft);
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart-axis {
+  stroke: color-mix(in srgb, var(--line) 88%, transparent 12%);
+  stroke-width: 1;
+}
+
+.chart-label {
+  font-size: 10px;
+  fill: var(--muted);
+}
+
+.chart-bar {
+  rx: 3;
+}
+
+.chart-bar-primary {
+  fill: color-mix(in srgb, var(--accent) 82%, white 18%);
+}
+
+.chart-bar-secondary {
+  fill: color-mix(in srgb, #28794f 86%, white 14%);
+}
+
+.chart-bar-tertiary {
+  fill: color-mix(in srgb, #d17d00 86%, white 14%);
+}
+
+.chart-line {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart-line-primary {
+  stroke: color-mix(in srgb, var(--accent) 90%, white 10%);
+}
+
+.chart-line-secondary {
+  stroke: color-mix(in srgb, #28794f 90%, white 10%);
+}
+
+.chart-line-tertiary {
+  stroke: color-mix(in srgb, #d17d00 90%, white 10%);
+}
+
+.report-overview-strip-engineer .overview-value {
+  font-size: 1.03rem;
+}
+
+.report-role-scorecards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.report-role-scorecard {
+  border: 1px solid var(--session-border);
+  border-radius: 16px;
+}
+
+.report-role-scorecard-tx {
+  border-left: 4px solid rgba(0, 106, 220, 0.52);
+}
+
+.report-role-scorecard-rx {
+  border-left: 4px solid rgba(40, 121, 79, 0.56);
+}
+
+.report-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem 0.75rem;
+}
+
+.report-metric-grid > div {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.62rem 0.68rem;
+  border: 1px solid color-mix(in srgb, var(--session-border) 86%, transparent 14%);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--session-surface) 92%, white 8%);
+}
+
+.report-health-bars {
+  display: grid;
+  gap: 0.58rem;
+  margin-top: 0.7rem;
+}
+
+.report-health-bars > div {
+  display: grid;
+  gap: 0.24rem;
+}
+
+.report-health-bars .muted {
+  font-size: 0.82rem;
+}
+
+.report-health-track {
+  position: relative;
+  height: 0.42rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--session-border) 76%, transparent 24%);
+  background: color-mix(in srgb, var(--session-surface-strong) 90%, var(--line) 10%);
+  overflow: hidden;
+}
+
+.report-health-fill {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+}
+
+.report-health-fill.ok {
+  background: linear-gradient(90deg, rgba(40, 121, 79, 0.76), rgba(43, 154, 102, 0.95));
+}
+
+.report-health-fill.warn {
+  background: linear-gradient(90deg, rgba(209, 125, 0, 0.76), rgba(209, 125, 0, 0.96));
+}
+
+.report-role-deep-dive {
+  padding: 0.9rem;
+  border: 1px solid var(--session-border);
+}
+
+.report-role-deep-dive-head {
+  margin-bottom: 0.75rem;
+}
+
+.report-role-deep-dive .panel {
+  padding: 0.88rem;
+}
+
+.report-expand {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.report-expand > summary {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.7rem;
+  cursor: pointer;
+  padding: 0.16rem 0;
+  font-weight: 620;
+}
+
+.report-expand > summary::-webkit-details-marker {
+  display: none;
+}
+
+.report-expand > summary::before {
+  content: ">";
+  font-family: "Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace;
+  color: var(--muted);
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+
+.report-expand[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.report-footer-stack {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.report-audit-panel {
+  border: 1px solid var(--session-border);
+}
+
+html[data-theme="dark"] .report-headline {
+  border-color: rgba(102, 168, 255, 0.34);
+  background: rgba(102, 168, 255, 0.16);
+}
+
+html[data-theme="dark"] .report-pill {
+  border-color: rgba(127, 167, 206, 0.24);
+  background: rgba(25, 34, 44, 0.76);
+}
+
+html[data-theme="dark"] .chart-shell {
+  background: rgba(17, 24, 33, 0.72);
+  border-color: rgba(127, 167, 206, 0.24);
+}
+
+@media (max-width: 1100px) {
+  .report-role-scorecards,
+  .report-footer-stack {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .report-engineer-head,
+  .report-expand > summary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .report-metric-grid,
+  .report-primary-grid,
+  .report-secondary-grid {
+    grid-template-columns: 1fr;
+  }
+}
