@@ -49,12 +49,21 @@ def test_simulated_capture_writes_human_and_machine_logs(tmp_path: Path) -> None
     assert result.diagnostics["capture_mode"] == "simulated"
 
 
-def test_capture_fails_when_command_template_missing_and_simulation_disabled(tmp_path: Path) -> None:
+def test_capture_uses_builtin_openocd_when_command_template_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     settings = AgentSettings(
         server_url="http://172.20.10.3:8000",
         data_dir=tmp_path / "agent_data",
     )
     state_store = LocalStateStore(tmp_path / "state")
+    invoked: list[str] = []
+
+    def fake_builtin_capture(self) -> None:
+        invoked.append("builtin")
+
+    monkeypatch.setattr(RunningCapture, "_capture_with_builtin_openocd_rtt", fake_builtin_capture)
     capture = RunningCapture(
         job_id="job-1",
         context=_prepared_context(tmp_path, Role.TX),
@@ -73,9 +82,9 @@ def test_capture_fails_when_command_template_missing_and_simulation_disabled(tmp
     capture._run()
 
     result = capture.result()
-    assert result.success is False
-    assert result.failure_reason == "capture_failed"
-    assert "capture command template missing" in result.diagnostics["error"]
+    assert result.success is True
+    assert result.diagnostics["capture_mode"] == "builtin_openocd_rtt"
+    assert invoked == ["builtin"]
 
 
 def test_runtime_uploads_machine_rtt_artifact_after_capture(tmp_path: Path) -> None:

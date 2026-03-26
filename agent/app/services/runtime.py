@@ -11,6 +11,7 @@ from agent.app.executors.capture import RunningCapture
 from agent.app.executors.openocd import OpenOcdExecutor
 from agent.app.services.api_client import ServerClient
 from agent.app.services.bundles import create_prebuilt_elf_bundle
+from agent.app.services.probes import ProbeInventorySnapshot, scan_probe_inventory
 from agent.app.storage.local_state import LocalStateStore
 from shared.enums import AgentStatus, ArtifactOriginType, JobType, RawArtifactType, Role
 from shared.schemas import (
@@ -39,8 +40,16 @@ class AgentRuntime:
         self.running_captures: dict[str, RunningCapture] = {}
         self.last_heartbeat_at = 0.0
         self.latest_time_sample = None
+        self.last_probe_scan_at = 0.0
+        self.probe_inventory = ProbeInventorySnapshot(
+            connected_probes=[],
+            configured_probe_serial=self.settings.openocd.probe_serial,
+            selected_probe_serial=self.settings.openocd.probe_serial,
+            selection_reason="probe_scan_pending",
+        )
 
     def register(self) -> None:
+        probe_inventory = self.refresh_probe_inventory(force=True)
         response = self.client.register_agent(
             AgentRegistrationRequest(
                 name=self.settings.name,
@@ -48,7 +57,7 @@ class AgentRuntime:
                 hostname=self.settings.hostname,
                 capabilities=self.settings.capabilities,
                 ip_address=self.settings.ip_address,
-                connected_probe_count=1 if self.settings.capabilities.flash_capable else 0,
+                connected_probe_count=probe_inventory.connected_probe_count,
                 software_version=self.settings.software_version,
             )
         )
@@ -64,15 +73,19 @@ class AgentRuntime:
         now = time.monotonic()
         if now - self.last_heartbeat_at < self.settings.heartbeat_interval_seconds:
             return
+        probe_inventory = self.refresh_probe_inventory(force=True)
         self.sample_time_sync()
         self.client.heartbeat(
             AgentHeartbeatRequest(
                 agent_id=self.agent_id,
                 status=self.current_status(),
                 ip_address=self.settings.ip_address,
-                connected_probe_count=1 if self.settings.capabilities.flash_capable else 0,
+                connected_probe_count=probe_inventory.connected_probe_count,
                 latest_time_sample=self.latest_time_sample,
-                diagnostics={"running_capture_jobs": list(self.running_captures.keys())},
+                diagnostics={
+                    "running_capture_jobs": list(self.running_captures.keys()),
+                    **probe_inventory.diagnostics(),
+                },
             )
         )
         self.last_heartbeat_at = now
@@ -104,9 +117,13 @@ class AgentRuntime:
                 payload = PrepareRolePayload.model_validate(job.payload)
                 bundle_path = self.settings.downloads_root / payload.session_id / f"{payload.role.value.lower()}_{payload.artifact_id}.zip"
                 self.client.download_artifact(payload.artifact_download_url, bundle_path)
+                probe_inventory = self.refresh_probe_inventory(force=True)
                 self.sample_time_sync()
                 result = self.openocd_executor.prepare(
-                    payload, bundle_path=bundle_path, time_samples=[self.latest_time_sample]
+                    payload,
+                    bundle_path=bundle_path,
+                    time_samples=[self.latest_time_sample],
+                    probe_inventory=probe_inventory,
                 )
                 if result.success:
                     try:
@@ -265,6 +282,29 @@ class AgentRuntime:
         )
         if not result.success:
             raise RuntimeError(result.failure_reason)
+
+    def refresh_probe_inventory(self, *, force: bool = False) -> ProbeInventorySnapshot:
+        if not (self.settings.capabilities.flash_capable or self.settings.capabilities.capture_capable):
+            self.probe_inventory = ProbeInventorySnapshot(
+                connected_probes=[],
+                configured_probe_serial=self.settings.openocd.probe_serial,
+                selected_probe_serial=self.settings.openocd.probe_serial,
+                selection_reason="probe_scan_skipped_for_non_hardware_agent",
+            )
+            return self.probe_inventory
+        now = time.monotonic()
+        if (
+            not force
+            and self.last_probe_scan_at
+            and (now - self.last_probe_scan_at) < self.settings.openocd.probe_scan_interval_seconds
+        ):
+            return self.probe_inventory
+        self.probe_inventory = scan_probe_inventory(
+            configured_probe_serial=self.settings.openocd.probe_serial,
+            scan_enabled=self.settings.openocd.probe_scan_enabled,
+        )
+        self.last_probe_scan_at = now
+        return self.probe_inventory
 
     def upload_prebuilt_artifact(
         self,

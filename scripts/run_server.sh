@@ -6,19 +6,19 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 find_server_bin() {
   local candidate
-  if command -v range-test-server >/dev/null 2>&1; then
-    command -v range-test-server
-    return 0
-  fi
   for candidate in \
-    "$REPO_ROOT/.venv/bin/range-test-server" \
-    "${RANGE_TEST_INSTALL_DIR:-$HOME/rtms-agent}/.venv/bin/range-test-server"
+    "${RANGE_TEST_INSTALL_DIR:-$HOME/rtms-agent}/.venv/bin/range-test-server" \
+    "$REPO_ROOT/.venv/bin/range-test-server"
   do
     if [[ -x "$candidate" ]]; then
       printf '%s\n' "$candidate"
       return 0
     fi
   done
+  if command -v range-test-server >/dev/null 2>&1; then
+    command -v range-test-server
+    return 0
+  fi
   return 1
 }
 

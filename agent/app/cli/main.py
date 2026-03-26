@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 
 from agent.app.core.config import get_settings
 from agent.app.core.logging import configure_logging
 from agent.app.services.high_altitude_cc_build import main as build_high_altitude_cc_main
+from agent.app.services.probes import scan_probe_inventory
 from agent.app.services.runtime import AgentRuntime
 from shared.enums import Role
 
@@ -43,12 +45,22 @@ def build_parser() -> argparse.ArgumentParser:
     high_altitude_parser.add_argument("--app-debug", type=int, choices=[0, 1], default=1)
     high_altitude_parser.add_argument("--build-config-json")
     high_altitude_parser.add_argument("--cmake-bin", default="cmake")
+
+    subparsers.add_parser("probe-scan", help="List connected probes visible to this agent host")
     return parser
 
 
 def main() -> None:
     configure_logging()
     args = build_parser().parse_args()
+    if args.command == "probe-scan":
+        settings = get_settings()
+        snapshot = scan_probe_inventory(
+            configured_probe_serial=settings.openocd.probe_serial,
+            scan_enabled=settings.openocd.probe_scan_enabled,
+        )
+        print(json.dumps(snapshot.diagnostics(), indent=2))
+        return
     if args.command == "build-high-altitude-cc":
         raise SystemExit(
             build_high_altitude_cc_main(

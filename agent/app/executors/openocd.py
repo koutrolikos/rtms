@@ -6,6 +6,7 @@ from pathlib import Path
 
 from agent.app.core.config import AgentSettings
 from agent.app.services.bundles import extract_bundle, load_manifest
+from agent.app.services.probes import ProbeInventorySnapshot, scan_probe_inventory
 from agent.app.storage.local_state import LocalStateStore, PreparedRoleContext
 from shared.enums import RawArtifactType, Role
 from shared.manifest import ArtifactBundleManifest
@@ -33,7 +34,34 @@ class OpenOcdExecutor:
         *,
         bundle_path: Path,
         time_samples,
+        probe_inventory: ProbeInventorySnapshot | None = None,
     ) -> JobResult:
+        probe_inventory = probe_inventory or scan_probe_inventory(
+            configured_probe_serial=self.settings.openocd.probe_serial,
+            scan_enabled=self.settings.openocd.probe_scan_enabled,
+        )
+        probe_serial = self.settings.openocd.probe_serial or probe_inventory.selected_probe_serial
+        if not self.settings.openocd.simulate_hardware:
+            if probe_inventory.selection_reason == "multiple_probes_detected" and probe_serial is None:
+                return JobResult(
+                    success=False,
+                    failure_reason="probe_selection_failed",
+                    diagnostics={
+                        **probe_inventory.diagnostics(),
+                        "hint": "Connect a single probe or set RANGE_TEST_PROBE_SERIAL on this agent.",
+                    },
+                    time_samples=time_samples,
+                )
+            if probe_inventory.selection_reason in {"no_probes_detected", "probe_scan_failed"} and probe_serial is None:
+                return JobResult(
+                    success=False,
+                    failure_reason="probe_not_found",
+                    diagnostics={
+                        **probe_inventory.diagnostics(),
+                        "hint": "Connect a probe to this agent before starting the session.",
+                    },
+                    time_samples=time_samples,
+                )
         work_dir = self.settings.sessions_root / payload.session_id / payload.role.value.lower()
         work_dir.mkdir(parents=True, exist_ok=True)
         extracted_dir = extract_bundle(bundle_path, work_dir / "bundle")
@@ -49,11 +77,11 @@ class OpenOcdExecutor:
             bundle_path=str(bundle_path),
             extracted_dir=str(extracted_dir),
             manifest=manifest,
-            probe_serial=self.settings.openocd.probe_serial,
+            probe_serial=probe_serial,
             openocd_log_path=str(work_dir / "openocd.log"),
             event_log_path=str(event_log_path),
             timing_samples_path=str(timing_samples_path),
-            diagnostics={},
+            diagnostics=probe_inventory.diagnostics(),
             latest_time_samples=list(time_samples),
         )
         self.state_store.append_event(context, "artifact_ready", {"bundle_path": str(bundle_path)})
@@ -68,6 +96,8 @@ class OpenOcdExecutor:
                     "flash_result": "ok",
                     "verify_result": "ok",
                     "prepared_at": utc_now().isoformat(),
+                    "probe_selection_reason": probe_inventory.selection_reason,
+                    "connected_probe_count": probe_inventory.connected_probe_count,
                 }
             )
             self.state_store.append_event(context, "flash_verified", context.diagnostics)
@@ -82,6 +112,8 @@ class OpenOcdExecutor:
                     "openocd_log_path": context.openocd_log_path,
                     "event_log_path": context.event_log_path,
                     "timing_samples_path": context.timing_samples_path,
+                    "probe_selection_reason": probe_inventory.selection_reason,
+                    "connected_probe_count": probe_inventory.connected_probe_count,
                 },
                 time_samples=time_samples,
             )

@@ -137,14 +137,16 @@ Install only what the host will do.
 - Build-capable: `git` + build tools required by the repo recipe
 - High-Altitude-CC build recipe today: `cmake`, `arm-none-eabi-gcc`
 - Flash-capable: `openocd` + correct interface/target configs
-- Capture-capable: external capture tool used by `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` (unless simulated)
+- Capture-capable: built-in OpenOCD RTT capture shipped with the agent
 
-Current capture command contract:
+Built-in capture defaults:
 
-- the command must write human RTT text to `{rtt_human_log_path}`
-- the command must write binary `MLOG` RTT frames to `{rtt_machine_log_path}`
-- `{rtt_log_path}` remains a one-transition alias for `{rtt_human_log_path}`
-- the agent captures command stdout/stderr to `{capture_command_log_path}`
+- search for RTT control block ID `SEGGER RTT` from `0x20000000` for `131072` bytes
+- capture human RTT channel `0` into `rtt.log`
+- capture machine `MLOG` RTT channel `1` into `rtt.rttbin`
+- capture OpenOCD stdout/stderr into `capture-command.log`
+
+`RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` remains available as an override for custom capture tools.
 
 Capability flags:
 
@@ -301,6 +303,12 @@ Key env vars:
 - `RANGE_TEST_OPENOCD_BIN`
 - `RANGE_TEST_OPENOCD_INTERFACE_CFG`
 - `RANGE_TEST_OPENOCD_TARGET_CFG`
+- `RANGE_TEST_OPENOCD_SCAN_PROBES`
+- `RANGE_TEST_OPENOCD_RTT_SEARCH_ADDRESS`
+- `RANGE_TEST_OPENOCD_RTT_SEARCH_SIZE_BYTES`
+- `RANGE_TEST_OPENOCD_RTT_ID`
+- `RANGE_TEST_OPENOCD_RTT_HUMAN_CHANNEL`
+- `RANGE_TEST_OPENOCD_RTT_MACHINE_CHANNEL`
 - `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE`
 
 Simulation defaults to OFF:
@@ -308,10 +316,13 @@ Simulation defaults to OFF:
 - `RANGE_TEST_SIMULATE_HARDWARE=0` unless explicitly set to `1`
 - `RANGE_TEST_SIMULATE_CAPTURE=0` unless explicitly set to `1`
 
-Capture will fail fast if `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` is unset and
-`RANGE_TEST_SIMULATE_CAPTURE` is not enabled.
+By default the agent scans for connected probes, auto-selects one probe when
+exactly one is present, and uses the built-in OpenOCD RTT capturer. Use
+`range-test-agent probe-scan` to inspect what the agent sees before running a
+session.
 
-`RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` should format against these placeholders:
+`RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` is optional. If you set it, it should
+format against these placeholders:
 
 - `{role}`
 - `{session_id}`

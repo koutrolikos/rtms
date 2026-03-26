@@ -137,14 +137,16 @@ Install only what you need for the capabilities enabled on that host.
 - Build-capable agent: `git` plus repo-specific build tools
 - Current High-Altitude-CC build recipe: `cmake`, `arm-none-eabi-gcc`
 - Flash-capable agent: `openocd` plus correct target/interface scripts
-- Capture-capable agent: tool referenced by `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` (if not simulating capture)
+- Capture-capable agent: built-in OpenOCD RTT capture shipped with the agent
 
-Current capture command contract:
+Built-in capture defaults:
 
-- write human RTT text to `{rtt_human_log_path}`
-- write binary `MLOG` RTT data to `{rtt_machine_log_path}`
-- `{rtt_log_path}` remains a compatibility alias for `{rtt_human_log_path}`
-- stdout/stderr are captured by the agent to `{capture_command_log_path}`
+- search for RTT control block ID `SEGGER RTT` from `0x20000000` for `131072` bytes
+- capture human RTT from channel `0` into `rtt.log`
+- capture binary `MLOG` RTT data from channel `1` into `rtt.rttbin`
+- capture OpenOCD stdout/stderr into `capture-command.log`
+
+`RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` remains available as an override if you need a custom capture flow.
 
 Minimal capability env vars:
 

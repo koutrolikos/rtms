@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.app.core.config import AgentSettings
+from agent.app.executors.openocd_rtt_capture import OpenOcdRttCapture
 from agent.app.storage.local_state import LocalStateStore, PreparedRoleContext
 from shared.enums import Role
 from shared.mlog import (
@@ -74,6 +75,7 @@ class RunningCapture:
 
     def _run(self) -> None:
         try:
+            capture_mode = "external_command"
             planned = self.payload.planned_start_at
             delay = (planned - utc_now()).total_seconds()
             if delay > 0:
@@ -84,14 +86,14 @@ class RunningCapture:
                 {"planned_start_at": planned.isoformat(), "actual_start_at": utc_now().isoformat()},
             )
             if self.settings.capture.simulate_capture:
+                capture_mode = "simulated"
                 self._simulate_capture()
             else:
-                if not self.settings.capture.command_template:
-                    raise RuntimeError(
-                        "capture command template missing; set RANGE_TEST_CAPTURE_COMMAND_TEMPLATE "
-                        "or enable RANGE_TEST_SIMULATE_CAPTURE=1"
-                    )
-                self._real_capture()
+                if self.settings.capture.command_template:
+                    self._capture_with_external_command()
+                else:
+                    capture_mode = "builtin_openocd_rtt"
+                    self._capture_with_builtin_openocd_rtt()
             self.state_store.append_event(self.context, "capture_finished", {"finished_at": utc_now().isoformat()})
             self._result = JobResult(
                 success=True,
@@ -102,7 +104,7 @@ class RunningCapture:
                     "capture_command_log_path": str(self.capture_command_log_path),
                     "event_log_path": self.context.event_log_path,
                     "timing_samples_path": self.context.timing_samples_path,
-                    "capture_mode": "simulated" if self.settings.capture.simulate_capture else "external_command",
+                    "capture_mode": capture_mode,
                 },
                 time_samples=self.context.latest_time_samples,
             )
@@ -140,7 +142,7 @@ class RunningCapture:
                         break
                     time.sleep(1.0)
 
-    def _real_capture(self) -> None:
+    def _capture_with_external_command(self) -> None:
         command_template = self.settings.capture.command_template
         if command_template is None:
             raise RuntimeError("capture command template missing")
@@ -180,6 +182,18 @@ class RunningCapture:
             return_code = self._process.wait()
         if return_code != 0 and not self._stop_requested.is_set():
             raise RuntimeError(f"capture command exited with {return_code}")
+
+    def _capture_with_builtin_openocd_rtt(self) -> None:
+        runner = OpenOcdRttCapture(
+            settings=self.settings,
+            context=self.context,
+            duration_seconds=self.payload.duration_seconds,
+            stop_requested=self._stop_requested,
+            rtt_human_log_path=self.rtt_human_log_path,
+            rtt_machine_log_path=self.rtt_machine_log_path,
+            capture_command_log_path=self.capture_command_log_path,
+        )
+        self._process = runner.run()
 
 
 def _simulated_run_frame(role: Role) -> bytes:

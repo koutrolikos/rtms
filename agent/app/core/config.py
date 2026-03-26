@@ -16,6 +16,8 @@ class OpenOcdSettings(BaseModel):
     target_cfg: str = "target/stm32g4x.cfg"
     extra_args: list[str] = Field(default_factory=list)
     flash_timeout_seconds: int = 180
+    probe_scan_enabled: bool = True
+    probe_scan_interval_seconds: float = 10.0
     verify_markers: list[str] = Field(
         default_factory=lambda: ["verified", "verify", "wrote", "shutdown command invoked"]
     )
@@ -27,6 +29,13 @@ class CaptureSettings(BaseModel):
     command_template: str | None = None
     terminate_grace_seconds: int = 5
     simulate_capture: bool = False
+    builtin_rtt_search_address: str = "0x20000000"
+    builtin_rtt_search_size_bytes: int = 131072
+    builtin_rtt_id: str = "SEGGER RTT"
+    builtin_rtt_human_channel: int = 0
+    builtin_rtt_machine_channel: int = 1
+    builtin_rtt_polling_interval_ms: int = 10
+    builtin_startup_timeout_seconds: int = 15
 
 
 class AgentSettings(BaseModel):
@@ -92,11 +101,35 @@ def get_settings() -> AgentSettings:
             openocd_bin=os.getenv("RANGE_TEST_OPENOCD_BIN", "openocd"),
             interface_cfg=os.getenv("RANGE_TEST_OPENOCD_INTERFACE_CFG", "interface/stlink.cfg"),
             target_cfg=os.getenv("RANGE_TEST_OPENOCD_TARGET_CFG", "target/stm32g4x.cfg"),
+            probe_scan_enabled=os.getenv("RANGE_TEST_OPENOCD_SCAN_PROBES", "1") == "1",
+            probe_scan_interval_seconds=float(
+                os.getenv("RANGE_TEST_OPENOCD_SCAN_INTERVAL_SECONDS", "10")
+            ),
             probe_serial=os.getenv("RANGE_TEST_PROBE_SERIAL"),
             simulate_hardware=os.getenv("RANGE_TEST_SIMULATE_HARDWARE", "0") == "1",
         ),
         capture=CaptureSettings(
             command_template=os.getenv("RANGE_TEST_CAPTURE_COMMAND_TEMPLATE"),
             simulate_capture=os.getenv("RANGE_TEST_SIMULATE_CAPTURE", "0") == "1",
+            builtin_rtt_search_address=os.getenv(
+                "RANGE_TEST_OPENOCD_RTT_SEARCH_ADDRESS",
+                "0x20000000",
+            ),
+            builtin_rtt_search_size_bytes=int(
+                os.getenv("RANGE_TEST_OPENOCD_RTT_SEARCH_SIZE_BYTES", "131072")
+            ),
+            builtin_rtt_id=os.getenv("RANGE_TEST_OPENOCD_RTT_ID", "SEGGER RTT"),
+            builtin_rtt_human_channel=int(
+                os.getenv("RANGE_TEST_OPENOCD_RTT_HUMAN_CHANNEL", "0")
+            ),
+            builtin_rtt_machine_channel=int(
+                os.getenv("RANGE_TEST_OPENOCD_RTT_MACHINE_CHANNEL", "1")
+            ),
+            builtin_rtt_polling_interval_ms=int(
+                os.getenv("RANGE_TEST_OPENOCD_RTT_POLLING_INTERVAL_MS", "10")
+            ),
+            builtin_startup_timeout_seconds=int(
+                os.getenv("RANGE_TEST_OPENOCD_RTT_STARTUP_TIMEOUT_SECONDS", "15")
+            ),
         ),
     )
