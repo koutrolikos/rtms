@@ -435,9 +435,11 @@ def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
 
     assert response.status_code == 200
     assert "Load Config" in response.text
-    assert "Detail Level" in response.text
+    assert "Machine Detail" in response.text
+    assert "Detail Level" not in response.text
     assert "Stat Period (ms)" in response.text
     assert "Human-readable RTT is always disabled for these builds." in response.text
+    assert "UI builds always use packet detail so generated reports have per-packet telemetry." in response.text
     assert "Channel Selection" not in response.text
     assert "Config Detail Packet | Stat period 5000 ms" in response.text
     assert "requested_build_config" not in response.text
@@ -460,6 +462,48 @@ def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
     assert f'data-active-stage-storage-key="session-active-stage:{session_id}"' in response.text
     assert f'data-stage-storage-key="session-stage:{session_id}"' in response.text
     assert f"/api/raw-artifacts/{raw_artifact.id}/download" in response.text
+
+
+def test_session_build_form_forces_packet_detail_for_high_altitude_cc(db_session, monkeypatch) -> None:
+    app = create_app()
+
+    def override_get_db():
+        yield db_session
+
+    monkeypatch.setattr("server.app.api.operator._github", lambda: FakeGitHubService())
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+
+    session_response = client.post(
+        "/api/sessions",
+        json={
+            "name": "ui-build-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "ridge",
+        },
+    )
+    session_id = session_response.json()["id"]
+
+    response = client.post(
+        f"/sessions/{session_id}/builds",
+        data={
+            "repo_id": "high-altitude-cc",
+            "git_sha": "deadbeefcafebabe",
+            "build_agent_id": "agent-build",
+            "role": "TX",
+            "build_config_json": '{"machine_log_detail":0,"machine_log_stat_period_ms":5000}',
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    artifact = db_session.query(Artifact).filter(Artifact.session_id == session_id).one()
+    job = db_session.query(Job).filter(Job.session_id == session_id).one()
+    assert artifact.metadata_json["requested_build_config"]["machine_log_detail"] == 1
+    assert artifact.metadata_json["requested_build_config"]["machine_log_stat_period_ms"] == 5000
+    assert job.payload_json["build_config"]["machine_log_detail"] == 1
+    assert job.payload_json["build_config"]["machine_log_stat_period_ms"] == 5000
 
 
 def test_session_detail_page_hides_existing_artifact_assignment_when_no_ready_artifacts(

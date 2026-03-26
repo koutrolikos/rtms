@@ -99,6 +99,17 @@ def _parse_build_config_json(build_config_json: str | None) -> HighAltitudeCCBui
         raise HTTPException(status_code=400, detail=f"invalid build_config_json: {exc}") from exc
 
 
+def _coerce_operator_build_config(
+    repo_id: str,
+    build_config: HighAltitudeCCBuildConfig | None,
+) -> HighAltitudeCCBuildConfig | None:
+    if repo_id != HIGH_ALTITUDE_CC_REPO_ID or build_config is None:
+        return build_config
+    if build_config.machine_log_detail == 1:
+        return build_config
+    return build_config.model_copy(update={"machine_log_detail": 1})
+
+
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     sessions = list_sessions(db)
@@ -265,6 +276,7 @@ def session_build_action(
 ) -> RedirectResponse:
     github = _github()
     repo = _get_repo_or_404(repo_id, github)
+    build_config = _coerce_operator_build_config(repo.id, _parse_build_config_json(build_config_json))
     request_build(
         db,
         settings=get_settings(),
@@ -274,7 +286,7 @@ def session_build_action(
             repo_id=repo_id,
             git_sha=git_sha,
             build_agent_id=build_agent_id,
-            build_config=_parse_build_config_json(build_config_json),
+            build_config=build_config,
         ),
         repo=repo,
     )

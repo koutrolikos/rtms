@@ -187,19 +187,49 @@ def _discover_linux_probes() -> list[ConnectedProbe]:
 
 
 def _discover_macos_probes() -> list[ConnectedProbe]:
+    system_profiler_error: str | None = None
+    try:
+        completed = subprocess.run(
+            ["system_profiler", "SPUSBDataType", "-json"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        if completed.returncode != 0:
+            system_profiler_error = completed.stderr.strip() or "system_profiler failed"
+        else:
+            payload = json.loads(completed.stdout or "{}")
+            probes: list[ConnectedProbe] = []
+            _walk_macos_usb_tree(payload, probes)
+            deduped = _dedupe_probes(probes)
+            if deduped:
+                return deduped
+    except Exception as exc:  # pragma: no cover - best effort around platform commands
+        system_profiler_error = str(exc)
+
+    try:
+        return _discover_macos_probes_via_ioreg()
+    except Exception as exc:  # pragma: no cover - best effort around platform commands
+        if system_profiler_error:
+            raise RuntimeError(
+                f"system_profiler probe discovery failed: {system_profiler_error}; "
+                f"ioreg probe discovery failed: {exc}"
+            ) from exc
+        raise
+
+
+def _discover_macos_probes_via_ioreg() -> list[ConnectedProbe]:
     completed = subprocess.run(
-        ["system_profiler", "SPUSBDataType", "-json"],
+        ["ioreg", "-p", "IOService", "-c", "IOUSBHostDevice", "-l", "-w", "0"],
         capture_output=True,
         text=True,
         timeout=15,
         check=False,
     )
     if completed.returncode != 0:
-        raise RuntimeError(completed.stderr.strip() or "system_profiler failed")
-    payload = json.loads(completed.stdout or "{}")
-    probes: list[ConnectedProbe] = []
-    _walk_macos_usb_tree(payload, probes)
-    return _dedupe_probes(probes)
+        raise RuntimeError(completed.stderr.strip() or "ioreg probe discovery failed")
+    return _parse_ioreg_usb_host_devices(completed.stdout)
 
 
 def _discover_windows_probes() -> list[ConnectedProbe]:
@@ -286,6 +316,108 @@ def _walk_macos_usb_tree(node: Any, probes: list[ConnectedProbe]) -> None:
         )
     for value in node.values():
         _walk_macos_usb_tree(value, probes)
+
+
+def _parse_ioreg_usb_host_devices(output: str) -> list[ConnectedProbe]:
+    probes: list[ConnectedProbe] = []
+    current_name: str | None = None
+    properties: dict[str, str] = {}
+    inside_device = False
+    inside_properties = False
+
+    def flush_current() -> None:
+        nonlocal current_name, properties, inside_device, inside_properties
+        if not inside_device:
+            return
+        probe = _build_ioreg_probe(current_name, properties)
+        if probe is not None:
+            probes.append(probe)
+        current_name = None
+        properties = {}
+        inside_device = False
+        inside_properties = False
+
+    for line in output.splitlines():
+        header_match = re.match(r'^\s*[| ]*\+-o\s+(.+?)\s+<class\s+IOUSBHostDevice\b', line)
+        if header_match:
+            flush_current()
+            current_name = header_match.group(1).strip()
+            inside_device = True
+            continue
+        if not inside_device:
+            continue
+        if "{" in line:
+            inside_properties = True
+            continue
+        if not inside_properties:
+            continue
+        if "}" in line:
+            flush_current()
+            continue
+        prop_match = re.match(r'^\s*[| ]*"([^"]+)" = (.+?)\s*$', line)
+        if prop_match:
+            properties[prop_match.group(1)] = _strip_ioreg_value(prop_match.group(2))
+    flush_current()
+    return _dedupe_probes(probes)
+
+
+def _build_ioreg_probe(name: str | None, properties: dict[str, str]) -> ConnectedProbe | None:
+    vendor_id = _normalize_ioreg_usb_id(properties.get("idVendor"))
+    product_id = _normalize_ioreg_usb_id(properties.get("idProduct"))
+    manufacturer = (
+        properties.get("USB Vendor Name")
+        or properties.get("kUSBVendorString")
+        or properties.get("manufacturer")
+    )
+    product = (
+        properties.get("USB Product Name")
+        or properties.get("kUSBProductString")
+        or properties.get("product")
+        or name
+    )
+    serial = (
+        properties.get("USB Serial Number")
+        or properties.get("kUSBSerialNumberString")
+        or properties.get("serial_num")
+    )
+    if not _looks_like_stlink(
+        vendor_id=vendor_id,
+        product_id=product_id,
+        manufacturer=manufacturer,
+        product=product,
+        name=name,
+    ):
+        return None
+    return ConnectedProbe(
+        serial=serial,
+        description=_probe_description(manufacturer=manufacturer, product=product, fallback=name or "ST-Link"),
+        vendor_id=vendor_id,
+        product_id=product_id,
+        manufacturer=manufacturer,
+        product=product,
+    )
+
+
+def _strip_ioreg_value(raw: str) -> str:
+    value = raw.strip()
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        return value[1:-1]
+    return value
+
+
+def _normalize_ioreg_usb_id(value: str | None) -> str | None:
+    if value is None:
+        return None
+    candidate = str(value).strip()
+    if not candidate:
+        return None
+    if candidate.startswith("<") and candidate.endswith(">"):
+        candidate = candidate[1:-1].replace(" ", "")
+        if re.fullmatch(r"[0-9A-Fa-f]+", candidate):
+            return candidate[-4:].lower()
+    if re.fullmatch(r"\d+", candidate):
+        return f"{int(candidate):04x}"
+    return _normalize_hex_token(candidate)
 
 
 def _looks_like_stlink(
