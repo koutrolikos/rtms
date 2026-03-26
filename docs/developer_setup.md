@@ -303,6 +303,14 @@ Key env vars:
 - `RANGE_TEST_OPENOCD_TARGET_CFG`
 - `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE`
 
+Simulation defaults to OFF:
+
+- `RANGE_TEST_SIMULATE_HARDWARE=0` unless explicitly set to `1`
+- `RANGE_TEST_SIMULATE_CAPTURE=0` unless explicitly set to `1`
+
+Capture will fail fast if `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` is unset and
+`RANGE_TEST_SIMULATE_CAPTURE` is not enabled.
+
 `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` should format against these placeholders:
 
 - `{role}`

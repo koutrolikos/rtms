@@ -83,9 +83,14 @@ class RunningCapture:
                 "capture_started",
                 {"planned_start_at": planned.isoformat(), "actual_start_at": utc_now().isoformat()},
             )
-            if self.settings.capture.simulate_capture or not self.settings.capture.command_template:
+            if self.settings.capture.simulate_capture:
                 self._simulate_capture()
             else:
+                if not self.settings.capture.command_template:
+                    raise RuntimeError(
+                        "capture command template missing; set RANGE_TEST_CAPTURE_COMMAND_TEMPLATE "
+                        "or enable RANGE_TEST_SIMULATE_CAPTURE=1"
+                    )
                 self._real_capture()
             self.state_store.append_event(self.context, "capture_finished", {"finished_at": utc_now().isoformat()})
             self._result = JobResult(
@@ -97,9 +102,7 @@ class RunningCapture:
                     "capture_command_log_path": str(self.capture_command_log_path),
                     "event_log_path": self.context.event_log_path,
                     "timing_samples_path": self.context.timing_samples_path,
-                    "capture_mode": "simulated"
-                    if self.settings.capture.simulate_capture or not self.settings.capture.command_template
-                    else "external_command",
+                    "capture_mode": "simulated" if self.settings.capture.simulate_capture else "external_command",
                 },
                 time_samples=self.context.latest_time_samples,
             )

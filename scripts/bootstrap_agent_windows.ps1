@@ -147,6 +147,8 @@ $envFile = "$InstallDir\.agent-env.ps1"
 `$env:RANGE_TEST_AGENT_BUILD_CAPABLE = '$BuildCapable'
 `$env:RANGE_TEST_AGENT_FLASH_CAPABLE = '$FlashCapable'
 `$env:RANGE_TEST_AGENT_CAPTURE_CAPABLE = '$CaptureCapable'
+`$env:RANGE_TEST_SIMULATE_HARDWARE = '0'
+`$env:RANGE_TEST_SIMULATE_CAPTURE = '0'
 "@ | Set-Content -Path $envFile -Encoding UTF8
 
 Write-Host '[4/4] Basic connectivity check'

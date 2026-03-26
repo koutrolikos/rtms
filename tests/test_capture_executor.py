@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from agent.app.core.config import AgentSettings
 from agent.app.executors.capture import RunningCapture
 from agent.app.services.runtime import AgentRuntime
@@ -16,6 +18,7 @@ def test_simulated_capture_writes_human_and_machine_logs(tmp_path: Path) -> None
     settings = AgentSettings(
         server_url="http://172.20.10.3:8000",
         data_dir=tmp_path / "agent_data",
+        capture={"simulate_capture": True},
     )
     state_store = LocalStateStore(tmp_path / "state")
     capture = RunningCapture(
@@ -43,6 +46,36 @@ def test_simulated_capture_writes_human_and_machine_logs(tmp_path: Path) -> None
     assert capture.rtt_machine_log_path.read_bytes().startswith(b"MLOG")
     assert result.diagnostics["rtt_human_log_path"].endswith("rtt.log")
     assert result.diagnostics["rtt_machine_log_path"].endswith("rtt.rttbin")
+    assert result.diagnostics["capture_mode"] == "simulated"
+
+
+def test_capture_fails_when_command_template_missing_and_simulation_disabled(tmp_path: Path) -> None:
+    settings = AgentSettings(
+        server_url="http://172.20.10.3:8000",
+        data_dir=tmp_path / "agent_data",
+    )
+    state_store = LocalStateStore(tmp_path / "state")
+    capture = RunningCapture(
+        job_id="job-1",
+        context=_prepared_context(tmp_path, Role.TX),
+        payload=StartCapturePayload(
+            session_id="session-1",
+            role_run_id="role-run-1",
+            role=Role.TX,
+            planned_start_at=utc_now(),
+            duration_seconds=1,
+            stop_mode=StopMode.FIXED_DURATION,
+        ),
+        settings=settings,
+        state_store=state_store,
+    )
+
+    capture._run()
+
+    result = capture.result()
+    assert result.success is False
+    assert result.failure_reason == "capture_failed"
+    assert "capture command template missing" in result.diagnostics["error"]
 
 
 def test_runtime_uploads_machine_rtt_artifact_after_capture(tmp_path: Path) -> None:
