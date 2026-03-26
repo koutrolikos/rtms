@@ -108,9 +108,9 @@ def test_generate_report_renders_partial_machine_report_and_excludes_legacy_metr
     assert report.diagnostics_json["roles"]["RX"]["run"] is None
 
     html = (tmp_path / report.html_storage_path).read_text(encoding="utf-8")
-    assert "Derived Metrics Scope" in html
-    assert "1. Signal Quality Relationships" in html
-    assert "6. System-Level Performance" in html
+    assert "RF Link Verdict" in html
+    assert "Packet Type Breakdown" in html
+    assert "Loss Hotspots Over Time" in html
     assert "packet delivery ratio" not in html
 
 
@@ -128,7 +128,7 @@ def test_generate_report_fails_when_no_machine_artifacts_exist(db_session, tmp_p
     assert report.status == ReportStatus.FAILED.value
     assert any(item["code"] == "machine_report_unavailable" for item in report.diagnostics_json["decode_diagnostics"])
     html = (tmp_path / report.html_storage_path).read_text(encoding="utf-8")
-    assert "Derived Metrics Scope" in html
+    assert "RF Link Verdict" in html
     assert "No RX packet RSSI/LQI samples available." in html
 
 

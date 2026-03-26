@@ -761,9 +761,9 @@ def test_report_page_renders_summaries_without_raw_payload_dumps(db_session) -> 
     report_page = client.get(f"/sessions/{session_id}/report")
 
     assert report_page.status_code == 200
-    assert "Derived Metrics Scope" in report_page.text
-    assert "1. Signal Quality Relationships" in report_page.text
-    assert "6. System-Level Performance" in report_page.text
+    assert "RF Link Verdict" in report_page.text
+    assert "Packet Type Breakdown" in report_page.text
+    assert "Loss Hotspots Over Time" in report_page.text
     assert "payload_json" not in report_page.text
     assert 'data-copy-label="session id"' in report_page.text
 
