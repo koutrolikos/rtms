@@ -134,3 +134,61 @@ def test_missing_openocd_binary_includes_install_hint(monkeypatch: pytest.Monkey
     assert exc_info.value.reason == "openocd_launch_failed"
     assert exc_info.value.diagnostics["openocd_bin"] == "openocd"
     assert "RANGE_TEST_OPENOCD_BIN" in exc_info.value.diagnostics["hint"]
+
+
+def test_flash_uses_adapter_serial_with_normalized_probe_serial(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "fw.elf"
+    image_path.write_bytes(b"firmware")
+    settings = AgentSettings(
+        server_url="http://172.20.10.3:8000",
+        data_dir=tmp_path / "agent_data",
+    )
+    executor = OpenOcdExecutor(settings, LocalStateStore(tmp_path / "state"))
+    context = PreparedRoleContext(
+        session_id="session-1",
+        role_run_id="role-run-1",
+        role=Role.TX.value,
+        artifact_id="artifact-1",
+        work_dir=str(tmp_path / "work"),
+        bundle_path=str(tmp_path / "bundle.zip"),
+        extracted_dir=str(tmp_path / "bundle"),
+        manifest=ArtifactBundleManifest(
+            artifact_id="artifact-1",
+            session_id="session-1",
+            origin_type=ArtifactOriginType.MANUAL_UPLOAD,
+            role_hint=Role.TX,
+            source_repo="koutrolikos/High-Altitude-CC",
+            git_sha="abc123",
+            created_at=utc_now(),
+            files=[
+                BundleFileEntry(
+                    path="firmware/fw.elf",
+                    size_bytes=image_path.stat().st_size,
+                    sha256="abc",
+                    kind="payload",
+                )
+            ],
+            flash=FlashSpec(flash_image_path="firmware/fw.elf", elf_path="firmware/fw.elf"),
+        ),
+        probe_serial='Tÿp\x06fuUU\x13D"\x87',
+        openocd_log_path=str(tmp_path / "openocd.log"),
+    )
+    captured_command: list[str] = []
+
+    class Completed:
+        returncode = 0
+        stdout = ""
+        stderr = "** Verified OK **\nshutdown command invoked\n"
+
+    def fake_run(command, **kwargs):
+        captured_command[:] = command
+        return Completed()
+
+    monkeypatch.setattr("agent.app.executors.openocd.subprocess.run", fake_run)
+
+    executor._flash_and_verify(image_path, context)
+
+    assert captured_command[5:7] == ["-c", "adapter serial 54FF70066675555513442287"]

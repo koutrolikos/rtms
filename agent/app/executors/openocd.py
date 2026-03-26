@@ -6,7 +6,7 @@ from pathlib import Path
 
 from agent.app.core.config import AgentSettings
 from agent.app.services.bundles import extract_bundle, load_manifest
-from agent.app.services.probes import ProbeInventorySnapshot, scan_probe_inventory
+from agent.app.services.probes import ProbeInventorySnapshot, normalize_probe_serial, scan_probe_inventory
 from agent.app.storage.local_state import LocalStateStore, PreparedRoleContext
 from shared.enums import RawArtifactType, Role
 from shared.manifest import ArtifactBundleManifest
@@ -40,7 +40,9 @@ class OpenOcdExecutor:
             configured_probe_serial=self.settings.openocd.probe_serial,
             scan_enabled=self.settings.openocd.probe_scan_enabled,
         )
-        probe_serial = self.settings.openocd.probe_serial or probe_inventory.selected_probe_serial
+        probe_serial = normalize_probe_serial(
+            self.settings.openocd.probe_serial or probe_inventory.selected_probe_serial
+        )
         if not self.settings.openocd.simulate_hardware:
             if probe_inventory.selection_reason == "multiple_probes_detected" and probe_serial is None:
                 return JobResult(
@@ -145,8 +147,9 @@ class OpenOcdExecutor:
             "-f",
             self.settings.openocd.target_cfg,
         ]
-        if context.probe_serial:
-            command.extend(["-c", f"hla_serial {context.probe_serial}"])
+        probe_serial = normalize_probe_serial(context.probe_serial)
+        if probe_serial:
+            command.extend(["-c", f"adapter serial {probe_serial}"])
         command.extend(self.settings.openocd.extra_args)
         command.extend(["-c", self._program_command(image_path)])
         try:

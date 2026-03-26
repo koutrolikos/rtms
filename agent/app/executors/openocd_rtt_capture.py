@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from agent.app.core.config import AgentSettings
+from agent.app.services.probes import normalize_probe_serial
 from agent.app.storage.local_state import PreparedRoleContext
 
 logger = logging.getLogger(__name__)
@@ -69,8 +70,9 @@ class OpenOcdRttCapture:
             "-f",
             self.settings.openocd.target_cfg,
         ]
-        if self.context.probe_serial:
-            command.extend(["-c", f"hla_serial {self.context.probe_serial}"])
+        probe_serial = normalize_probe_serial(self.context.probe_serial)
+        if probe_serial:
+            command.extend(["-c", f"adapter serial {probe_serial}"])
         command.extend(self.settings.openocd.extra_args)
         command.extend(
             [

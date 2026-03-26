@@ -60,6 +60,7 @@ class ProbeInventorySnapshot:
 
 
 def scan_probe_inventory(*, configured_probe_serial: str | None, scan_enabled: bool = True) -> ProbeInventorySnapshot:
+    configured_probe_serial = normalize_probe_serial(configured_probe_serial)
     if not scan_enabled:
         return ProbeInventorySnapshot(
             connected_probes=[],
@@ -86,38 +87,59 @@ def _build_snapshot(
     configured_probe_serial: str | None,
     probes: list[ConnectedProbe],
 ) -> ProbeInventorySnapshot:
+    normalized_probes = _dedupe_probes([_normalize_connected_probe(probe) for probe in probes])
     if configured_probe_serial:
-        serials = {probe.serial for probe in probes if probe.serial}
+        serials = {probe.serial for probe in normalized_probes if probe.serial}
         return ProbeInventorySnapshot(
-            connected_probes=probes,
+            connected_probes=normalized_probes,
             configured_probe_serial=configured_probe_serial,
             selected_probe_serial=configured_probe_serial,
             selection_reason=(
                 "configured_probe_connected"
-                if configured_probe_serial in serials or not probes
+                if configured_probe_serial in serials or not normalized_probes
                 else "configured_probe_not_detected"
             ),
         )
-    if not probes:
+    if not normalized_probes:
         return ProbeInventorySnapshot(
             connected_probes=[],
             configured_probe_serial=None,
             selected_probe_serial=None,
             selection_reason="no_probes_detected",
         )
-    if len(probes) == 1:
+    if len(normalized_probes) == 1:
         return ProbeInventorySnapshot(
-            connected_probes=probes,
+            connected_probes=normalized_probes,
             configured_probe_serial=None,
-            selected_probe_serial=probes[0].serial,
+            selected_probe_serial=normalized_probes[0].serial,
             selection_reason="auto_selected_single_probe",
         )
     return ProbeInventorySnapshot(
-        connected_probes=probes,
+        connected_probes=normalized_probes,
         configured_probe_serial=None,
         selected_probe_serial=None,
         selection_reason="multiple_probes_detected",
     )
+
+
+def normalize_probe_serial(value: str | None) -> str | None:
+    if value is None:
+        return None
+    candidate = str(value).strip()
+    if not candidate:
+        return None
+    compact = re.sub(r"[\s:-]", "", candidate)
+    if compact.lower().startswith("0x"):
+        compact = compact[2:]
+    if re.fullmatch(r"[0-9A-Fa-f]+", compact):
+        return compact.upper()
+    if _is_ascii_printable(candidate):
+        return candidate
+    try:
+        raw = candidate.encode("latin-1")
+    except UnicodeEncodeError:
+        return candidate
+    return raw.hex().upper()
 
 
 def _discover_connected_probes() -> list[ConnectedProbe]:
@@ -300,6 +322,21 @@ def _dedupe_probes(probes: list[ConnectedProbe]) -> list[ConnectedProbe]:
 def _probe_description(*, manufacturer: str | None, product: str | None, fallback: str) -> str:
     description = " ".join(part for part in (manufacturer, product) if part).strip()
     return description or fallback
+
+
+def _normalize_connected_probe(probe: ConnectedProbe) -> ConnectedProbe:
+    return ConnectedProbe(
+        serial=normalize_probe_serial(probe.serial),
+        description=probe.description,
+        vendor_id=probe.vendor_id,
+        product_id=probe.product_id,
+        manufacturer=probe.manufacturer,
+        product=probe.product,
+    )
+
+
+def _is_ascii_printable(value: str) -> bool:
+    return all(32 <= ord(char) <= 126 for char in value)
 
 
 def _normalize_hex_token(value: str | None) -> str | None:
