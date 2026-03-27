@@ -1,927 +1,475 @@
 {% extends "base.html" %}
 {% block title %}{{ session.name }}{% endblock %}
 {% block content %}
-{% from "_summary.html" import render_copy_value, render_summary %}
-{% set assigned_artifacts = namespace(count=0) %}
-{% if session.tx_artifact_id %}{% set assigned_artifacts.count = assigned_artifacts.count + 1 %}{% endif %}
-{% if session.rx_artifact_id %}{% set assigned_artifacts.count = assigned_artifacts.count + 1 %}{% endif %}
 {% set setup_ready = session.tx_agent_id and session.rx_agent_id %}
 {% set artifacts_ready = session.tx_artifact_id and session.rx_artifact_id %}
-{% set can_start = setup_ready and artifacts_ready %}
-{% set run_active = session.status in ["preparing_roles", "ready_to_capture", "capturing", "merging", "report_ready", "failed", "cancelled"] %}
 {% set report_ready = report and report.html_storage_path %}
-{% set stage = namespace(current=1, active_id="stage-configure") %}
+{% set stage = namespace(active_id="stage-configure") %}
 {% if setup_ready %}
   {% if report_ready or session.status == "report_ready" %}
-    {% set stage.current = 4 %}
     {% set stage.active_id = "stage-outputs" %}
   {% elif not artifacts_ready or session.status in ["draft", "selecting_artifacts", "building_artifacts"] %}
-    {% set stage.current = 2 %}
     {% set stage.active_id = "stage-artifacts" %}
   {% else %}
-    {% set stage.current = 3 %}
     {% set stage.active_id = "stage-run" %}
   {% endif %}
 {% endif %}
 <section
   class="session-screen"
   data-auto-refresh-url="/sessions/{{ session.id }}/live"
+  data-auto-refresh-fragment-url="/sessions/{{ session.id }}/fragment"
+  data-auto-refresh-target-id="session-live-shell"
+  data-auto-refresh-init="rtmsInitSessionScreen"
   data-auto-refresh-version="{{ live_version }}"
   data-auto-refresh-interval-ms="2500"
   data-stage-storage-key="session-stage:{{ session.id }}"
   data-active-stage-id="{{ stage.active_id }}"
   data-active-stage-storage-key="session-active-stage:{{ session.id }}"
+  data-build-storage-key="session-build:{{ session.id }}"
 >
-<section class="hero session-hero">
-  <div class="session-hero-main">
-    <p class="eyebrow">Session</p>
-    <h2>{{ session.name }}</h2>
-    <div class="hero-meta session-hero-meta">
-      <div class="hero-meta-item session-meta-item session-meta-item-id">
-        <span class="hero-meta-label">Session ID</span>
-        {{ render_copy_value(session.id, session.id | short_id, "session id", true) }}
-      </div>
-      <div class="hero-meta-item session-meta-item">
-        <span class="hero-meta-label">Location</span>
-        <span>{{ session.location_text or "Not set" }}</span>
-      </div>
-      <div class="hero-meta-item session-meta-item">
-        <span class="hero-meta-label">Duration</span>
-        <span>
-          {% if session.stop_mode == "manual" %}
-          Manual stop
-          {% else %}
-          {{ session.selected_duration_minutes or session.default_duration_minutes }} min
-          {% endif %}
-        </span>
-      </div>
-    </div>
-  </div>
-  <div class="hero-status session-hero-status">
-    <span class="chip chip-{{ session.status }}">{{ session.status | humanize_token }}</span>
-    {% if session.status == "building_artifacts" %}
-    <div class="session-build-progress" role="status" aria-live="polite" aria-label="Building artifacts">
-      <span class="session-build-progress-label">Building artifacts...</span>
-      <div class="session-build-progress-track" aria-hidden="true">
-        <span class="session-build-progress-fill"></span>
-      </div>
-    </div>
-    {% endif %}
-    {% if report and report.html_storage_path %}
-    <a class="button secondary" href="/sessions/{{ session.id }}/report">View Report</a>
-    {% endif %}
-  </div>
-</section>
-
-<section class="overview-strip session-overview-strip">
-  <article class="overview-card">
-    <span class="overview-label">TX Host</span>
-    <span class="overview-value">{{ host_labels.get(session.tx_agent_id, "Unassigned") if session.tx_agent_id else "Unassigned" }}</span>
-    <span class="overview-meta">
-      {% if session.tx_artifact_id %}
-      Artifact {{ session.tx_artifact_id | short_id }}
-      {% else %}
-      No TX artifact
-      {% endif %}
-    </span>
-  </article>
-  <article class="overview-card">
-    <span class="overview-label">RX Host</span>
-    <span class="overview-value">{{ host_labels.get(session.rx_agent_id, "Unassigned") if session.rx_agent_id else "Unassigned" }}</span>
-    <span class="overview-meta">
-      {% if session.rx_artifact_id %}
-      Artifact {{ session.rx_artifact_id | short_id }}
-      {% else %}
-      No RX artifact
-      {% endif %}
-    </span>
-  </article>
-  <article class="overview-card">
-    <span class="overview-label">Artifacts</span>
-    <span class="overview-value">{{ assigned_artifacts.count }}/2 assigned</span>
-    <span class="overview-meta">
-      TX {{ "ready" if session.tx_artifact_id else "pending" }} | RX {{ "ready" if session.rx_artifact_id else "pending" }}
-    </span>
-  </article>
-  <article class="overview-card">
-    <span class="overview-label">Report</span>
-    <span class="overview-value">{{ report.status | humanize_token if report else "Pending" }}</span>
-    <span class="overview-meta">
-      {{ "Generated" if report and report.html_storage_path else "Pending" }}
-    </span>
-  </article>
-</section>
-
-<nav class="pipeline-nav session-pipeline-nav" aria-label="Session stages">
-  <button
-    type="button"
-    class="pipeline-nav-button {% if stage.current == 1 %}active{% elif setup_ready %}complete{% endif %}"
-    data-pipeline-jump="stage-configure"
-  >
-    <span class="pipeline-nav-step">1</span>
-    <span class="pipeline-nav-copy">
-      <strong>Configure</strong>
-      <small>{{ "Ready" if setup_ready else "Pending setup" }}</small>
-    </span>
-  </button>
-  <button
-    type="button"
-    class="pipeline-nav-button {% if stage.current == 2 %}active{% elif artifacts_ready %}complete{% endif %}"
-    data-pipeline-jump="stage-artifacts"
-  >
-    <span class="pipeline-nav-step">2</span>
-    <span class="pipeline-nav-copy">
-      <strong>Artifacts</strong>
-      <small>{{ "Ready" if artifacts_ready else "Pending assignment" }}</small>
-    </span>
-  </button>
-  <button
-    type="button"
-    class="pipeline-nav-button {% if stage.current == 3 %}active{% elif run_active %}complete{% endif %}"
-    data-pipeline-jump="stage-run"
-  >
-    <span class="pipeline-nav-step">3</span>
-    <span class="pipeline-nav-copy">
-      <strong>Run</strong>
-      <small>{% if session.status == "capturing" %}Live capture{% elif run_active %}Active{% else %}Waiting{% endif %}</small>
-    </span>
-  </button>
-  <button
-    type="button"
-    class="pipeline-nav-button {% if stage.current == 4 %}active{% elif report_ready %}complete{% endif %}"
-    data-pipeline-jump="stage-outputs"
-  >
-    <span class="pipeline-nav-step">4</span>
-    <span class="pipeline-nav-copy">
-      <strong>Outputs</strong>
-      <small>{{ "Report ready" if report_ready else "Awaiting report" }}</small>
-    </span>
-  </button>
-</nav>
-
-<section class="session-layout">
-  <div class="pipeline-main">
-    <section
-      class="pipeline-stage {% if stage.current == 1 %}is-open{% endif %}"
-      id="stage-configure"
-      data-pipeline-stage
-      data-stage-status="{% if stage.current == 1 %}active{% elif setup_ready %}complete{% else %}pending{% endif %}"
-    >
-      <header class="pipeline-stage-head">
-        <button type="button" class="pipeline-stage-toggle" data-stage-toggle>
-          <div class="pipeline-stage-title">
-            <span class="pipeline-step-number">1</span>
-            <div>
-              <h3>Configure</h3>
-            </div>
-          </div>
-          <div class="pipeline-stage-meta">
-            <span class="pipeline-pill {% if setup_ready %}ready{% else %}pending{% endif %}">
-              {{ "ready" if setup_ready else "pending" }}
-            </span>
-          </div>
-        </button>
-      </header>
-      <div class="pipeline-stage-body">
-        <article class="panel session-setup-panel">
-          <div class="panel-section-grid session-setup-grid">
-            <section class="panel-section session-setup-section">
-              <div class="panel-section-head">
-                <h4>Metadata</h4>
-              </div>
-              <form method="post" action="/sessions/{{ session.id }}/metadata" class="stack session-setup-form session-metadata-form">
-                <label class="wide-field"><span>Name</span><input type="text" name="name" value="{{ session.name }}" /></label>
-                <label><span>Stop Mode</span>
-                  <select name="stop_mode">
-                    <option value="default_duration" {% if session.stop_mode == "default_duration" %}selected{% endif %}>Default duration</option>
-                    <option value="fixed_duration" {% if session.stop_mode == "fixed_duration" %}selected{% endif %}>Fixed duration</option>
-                    <option value="manual" {% if session.stop_mode == "manual" %}selected{% endif %}>Manual stop</option>
-                  </select>
-                </label>
-                <label><span>Selected Duration Minutes</span><input type="number" min="1" name="selected_duration_minutes" value="{{ session.selected_duration_minutes or session.default_duration_minutes }}" /></label>
-                <label class="wide-field"><span>Location</span><input type="text" name="location_text" value="{{ session.location_text or '' }}" /></label>
-                <label><span>Initial Notes</span><textarea class="notes-field" name="initial_notes" rows="1">{{ session.initial_notes or "" }}</textarea></label>
-                <label><span>Final Notes</span><textarea class="notes-field" name="final_notes" rows="1">{{ session.final_notes or "" }}</textarea></label>
-                <button type="submit">Save Session Details</button>
-              </form>
-            </section>
-
-            <section class="panel-section session-setup-section">
-              <div class="panel-section-head">
-                <h4>Hosts</h4>
-              </div>
-              <form method="post" action="/sessions/{{ session.id }}/hosts" class="stack session-setup-form session-hosts-form">
-                <label>
-                  <span>TX Host</span>
-                  <select name="tx_agent_id" required>
-                    <option value="">Select TX host</option>
-                    {% for host in hosts %}
-                    <option value="{{ host.id }}" {% if session.tx_agent_id == host.id %}selected{% endif %}>{{ host.label or host.name }}</option>
-                    {% endfor %}
-                  </select>
-                </label>
-                <label>
-                  <span>RX Host</span>
-                  <select name="rx_agent_id" required>
-                    <option value="">Select RX host</option>
-                    {% for host in hosts %}
-                    <option value="{{ host.id }}" {% if session.rx_agent_id == host.id %}selected{% endif %}>{{ host.label or host.name }}</option>
-                    {% endfor %}
-                  </select>
-                </label>
-                <button type="submit">Assign Hosts</button>
-              </form>
-            </section>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section
-      class="pipeline-stage {% if stage.current == 2 %}is-open{% endif %}"
-      id="stage-artifacts"
-      data-pipeline-stage
-      data-stage-status="{% if stage.current == 2 %}active{% elif artifacts_ready %}complete{% else %}pending{% endif %}"
-    >
-      <header class="pipeline-stage-head">
-        <button type="button" class="pipeline-stage-toggle" data-stage-toggle>
-          <div class="pipeline-stage-title">
-            <span class="pipeline-step-number">2</span>
-            <div>
-              <h3>Artifacts</h3>
-            </div>
-          </div>
-          <div class="pipeline-stage-meta">
-            <span class="pipeline-pill {% if artifacts_ready %}ready{% else %}pending{% endif %}">
-              {{ "ready" if artifacts_ready else "pending" }}
-            </span>
-          </div>
-        </button>
-      </header>
-      <div class="pipeline-stage-body">
-        <article class="panel">
-          <div class="panel-section-grid">
-            <section class="panel-section">
-              <div class="panel-section-head">
-                <h4>Build</h4>
-              </div>
-              <form method="post" action="/sessions/{{ session.id }}/builds" class="stack" id="session-build-form">
-                <input type="hidden" name="build_config_json" id="build-config-json" />
-                <div class="grid two">
-                  <label>
-                    <span>Target Slot</span>
-                    <select name="role" id="build-role" required>
-                      <option value="TX" {% if not session.tx_artifact_id and session.rx_artifact_id %}selected{% endif %}>TX Slot</option>
-                      <option value="RX" {% if session.tx_artifact_id and not session.rx_artifact_id %}selected{% endif %}>RX Slot</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>Build Host</span>
-                    <select name="build_agent_id" required>
-                      <option value="">Select agent</option>
-                      {% for host in hosts %}
-                      {% if host.capabilities_json.build_capable %}
-                      <option value="{{ host.id }}">{{ host.label or host.name }}</option>
-                      {% endif %}
-                      {% endfor %}
-                    </select>
-                  </label>
-                </div>
-                <p
-                  class="field-hint"
-                  id="build-role-hint"
-                  data-tx-artifact="{{ session.tx_artifact_id | short_id if session.tx_artifact_id else '' }}"
-                  data-rx-artifact="{{ session.rx_artifact_id | short_id if session.rx_artifact_id else '' }}"
-                >Build outputs auto-assign to the selected slot when ready.</p>
-                <label>
-                  <span>Repo</span>
-                  <select name="repo_id" id="build-repo-id" required>
-                    <option value="">Select repo</option>
-                    {% for repo in repos %}
-                    <option value="{{ repo.id }}" {% if repo.id == "high-altitude-cc" %}selected{% endif %}>{{ repo.display_name }}</option>
-                    {% endfor %}
-                  </select>
-                </label>
-                <div class="stack build-browser">
-                  <label>
-                    <span>Commit Search</span>
-                    <div class="inline-form">
-                      <input type="text" id="commit-query" data-enter-click="search-commits" placeholder="Search by branch, tag, or SHA prefix" />
-                      <button type="button" class="secondary" id="search-commits">Search Commits</button>
-                    </div>
-                  </label>
-                  <div id="commit-results" class="build-commit-results"></div>
-                </div>
-                <label>
-                  <span>Exact Git SHA</span>
-                  <div class="inline-form">
-                    <input
-                      type="text"
-                      name="git_sha"
-                      id="build-git-sha"
-                      data-enter-click="load-build-config"
-                      required
-                      placeholder="40-char SHA or branch-qualified SHA"
-                    />
-                    <button type="button" class="secondary" id="load-build-config">Load Config</button>
-                  </div>
-                </label>
-                <p class="muted" id="build-config-status">Load a commit before queueing the build.</p>
-                <p class="muted">Human-readable RTT is always disabled for these builds. Machine telemetry is always enabled, and packet detail is enforced for report-ready captures.</p>
-                <div class="grid two">
-                  <label>
-                    <span>Machine Detail</span>
-                    <input type="text" value="Packet" readonly aria-readonly="true" />
-                  </label>
-                  <label>
-                    <span>Stat Period (ms)</span>
-                    <input type="number" id="build-machine-log-stat-period-ms" min="0" step="1" placeholder="Default" />
-                  </label>
-                </div>
-                <p class="field-hint">UI builds always use packet detail so generated reports have per-packet telemetry.</p>
-                <div class="stack">
-                  <div class="build-summary-meta">
-                    <span>Build Summary</span>
-                    <span class="build-summary-badge" aria-hidden="true">System generated</span>
-                  </div>
-                  <p class="muted build-summary-note">This preview is not editable. Load a commit to refresh values.</p>
-                  <div id="build-config-summary" class="build-summary-box" role="status" aria-live="polite" aria-readonly="true">Load a commit to inspect the resolved GitHub-build defaults.</div>
-                </div>
-                <button type="submit" id="queue-build-button" disabled>Queue Build</button>
-              </form>
-            </section>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section
-      class="pipeline-stage {% if stage.current == 3 %}is-open{% endif %}"
-      id="stage-run"
-      data-pipeline-stage
-      data-stage-status="{% if stage.current == 3 %}active{% elif report_ready or session.status == 'report_ready' %}complete{% else %}pending{% endif %}"
-    >
-      <header class="pipeline-stage-head">
-        <button type="button" class="pipeline-stage-toggle" data-stage-toggle>
-          <div class="pipeline-stage-title">
-            <span class="pipeline-step-number">3</span>
-            <div>
-              <h3>Run</h3>
-            </div>
-          </div>
-          <div class="pipeline-stage-meta">
-            <span class="pipeline-pill {% if session.status == 'capturing' %}live{% elif run_active %}ready{% else %}pending{% endif %}">
-              {% if session.status == "capturing" %}live{% elif run_active %}active{% else %}pending{% endif %}
-            </span>
-          </div>
-        </button>
-      </header>
-      <div class="pipeline-stage-body">
-      <article class="panel run-control-panel">
-        <div class="run-control-shell">
-          <div class="run-control-status">
-            <div class="run-status-line">
-              <h3>Control</h3>
-              <span class="chip chip-{{ session.status }}">{{ session.status | humanize_token }}</span>
-            </div>
-            <div class="run-readiness-row">
-              <span class="run-readiness-item {% if session.tx_agent_id %}ready{% else %}pending{% endif %}">TX host</span>
-              <span class="run-readiness-item {% if session.rx_agent_id %}ready{% else %}pending{% endif %}">RX host</span>
-              <span class="run-readiness-item {% if session.tx_artifact_id %}ready{% else %}pending{% endif %}">TX artifact</span>
-              <span class="run-readiness-item {% if session.rx_artifact_id %}ready{% else %}pending{% endif %}">RX artifact</span>
-            </div>
-          </div>
-          <div class="run-control-actions">
-            <form method="post" action="/sessions/{{ session.id }}/start">
-              <button type="submit" {% if not can_start %}disabled{% endif %}>Start Session</button>
-            </form>
-            {% if session.status == "capturing" %}
-            <form method="post" action="/sessions/{{ session.id }}/stop">
-              <button type="submit" class="danger">Manual Stop</button>
-            </form>
-            {% endif %}
-            <form method="post" action="/sessions/{{ session.id }}/report/generate">
-              <button type="submit" class="secondary">Generate Report</button>
-            </form>
-          </div>
-        </div>
-      </article>
-      <div class="run-stage-grid">
-        <article class="panel run-role-panel">
-          <div class="panel-head">
-            <h3>Role Runs</h3>
-          </div>
-          <div class="run-role-grid">
-            {% for role_name in ["TX", "RX"] %}
-            {% set role_run = namespace(item=None) %}
-            {% for role in roles %}
-            {% if role.role == role_name %}
-            {% set role_run.item = role %}
-            {% endif %}
-            {% endfor %}
-            {% set assigned_host_id = session.tx_agent_id if role_name == "TX" else session.rx_agent_id %}
-            <article class="run-role-card">
-              <div class="run-role-head">
-                <h4>{{ role_name }}</h4>
-                <span class="chip {% if role_run.item %}chip-{{ role_run.item.status }}{% endif %}">
-                  {{ role_run.item.status | humanize_token if role_run.item else "not started" }}
-                </span>
-              </div>
-              <dl class="run-role-meta">
-                <div>
-                  <dt>Host</dt>
-                  <dd>{{ host_labels.get(role_run.item.agent_id, role_run.item.agent_id) if role_run.item and role_run.item.agent_id else host_labels.get(assigned_host_id, "Unassigned") if assigned_host_id else "Unassigned" }}</dd>
-                </div>
-                <div>
-                  <dt>Flash</dt>
-                  <dd>{{ role_run.item.flash_result or "-" if role_run.item else "-" }}</dd>
-                </div>
-                <div>
-                  <dt>Verify</dt>
-                  <dd>{{ role_run.item.verify_result or "-" if role_run.item else "-" }}</dd>
-                </div>
-                <div>
-                  <dt>Failure</dt>
-                  <dd>{{ role_run.item.failure_reason or "-" if role_run.item else "-" }}</dd>
-                </div>
-              </dl>
-            </article>
-            {% endfor %}
-          </div>
-        </article>
-
-        <article class="panel run-annotation-panel">
-          <div class="panel-head">
-            <h3>Live Annotation</h3>
-          </div>
-          <form method="post" action="/sessions/{{ session.id }}/annotations" class="stack run-annotation-form">
-            <label><span>Annotation</span><textarea name="text" rows="2" placeholder="Vehicle passed tree line, LOS obstruction, antenna orientation change."></textarea></label>
-            <button type="submit">Add Annotation</button>
-          </form>
-          <ul class="timeline run-annotation-stream">
-            {% for annotation in annotations %}
-            <li><strong>{{ annotation.created_at }}</strong><span>{{ annotation.text }}</span></li>
-            {% else %}
-            <li class="muted run-empty">No annotations yet.</li>
-            {% endfor %}
-          </ul>
-        </article>
-      </div>
-      </div>
-    </section>
-
-    <section
-      class="pipeline-stage {% if stage.current == 4 %}is-open{% endif %}"
-      id="stage-outputs"
-      data-pipeline-stage
-      data-stage-status="{% if stage.current == 4 %}active{% elif report_ready %}complete{% else %}pending{% endif %}"
-    >
-      <header class="pipeline-stage-head">
-        <button type="button" class="pipeline-stage-toggle" data-stage-toggle>
-          <div class="pipeline-stage-title">
-            <span class="pipeline-step-number">4</span>
-            <div>
-              <h3>Outputs</h3>
-            </div>
-          </div>
-          <div class="pipeline-stage-meta">
-            <span class="pipeline-pill {% if report_ready %}ready{% else %}pending{% endif %}">
-              {{ "ready" if report_ready else "pending" }}
-            </span>
-          </div>
-        </button>
-      </header>
-      <div class="pipeline-stage-body">
-      <div class="stack">
-        <article class="panel">
-          <div class="panel-head">
-            <h3>Artifacts</h3>
-          </div>
-          <div class="table-shell">
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Status</th>
-                  <th>Role</th>
-                  <th>Origin</th>
-                  <th>SHA</th>
-                  <th>Metadata</th>
-                  <th>Download</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for artifact in artifacts %}
-                <tr>
-                  <td>{{ render_copy_value(artifact.id, artifact.id | short_id, "artifact id", true) }}</td>
-                  <td>{{ artifact.status | humanize_token }}</td>
-                  <td>{{ artifact.role_compatibility_json | join(", ") if artifact.role_compatibility_json else "-" }}</td>
-                  <td>{{ artifact.origin_type | humanize_token }}</td>
-                  <td>{{ render_copy_value(artifact.git_sha, artifact.git_sha | short_sha if artifact.git_sha else None, "git sha", true) }}</td>
-                  <td>{{ render_summary(summarize_artifact_metadata(artifact.metadata_json)) }}</td>
-                  <td>{% if artifact.storage_path %}<a href="/api/artifacts/{{ artifact.id }}/download">bundle</a>{% else %}-{% endif %}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="7" class="muted">No artifacts yet.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-head">
-            <h3>Raw Artifacts</h3>
-          </div>
-          <div class="table-shell">
-            <table>
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Role</th>
-                  <th>Size</th>
-                  <th>Download</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for item in raw_artifacts %}
-                <tr>
-                  <td>{{ item.type | humanize_token }}</td>
-                  <td>{{ item.role or "session" }}</td>
-                  <td>{{ item.size_bytes | human_bytes }}</td>
-                  <td><a href="/api/raw-artifacts/{{ item.id }}/download">{{ item.storage_path | basename }}</a></td>
-                </tr>
-                {% else %}
-                <tr><td colspan="4" class="muted">No raw artifacts uploaded yet.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </article>
-      </div>
-      </div>
-    </section>
-  </div>
-
-  <aside class="pipeline-sidebar">
-    <article class="panel sidebar-panel">
-      <div class="panel-head">
-        <h3>Jobs</h3>
-      </div>
-      <div class="sidebar-stream">
-        {% for job in jobs %}
-        <article class="sidebar-entry">
-          <div class="sidebar-entry-head">
-            <strong>{{ job.type | humanize_token }}</strong>
-            <span class="chip chip-{{ job.status }}">{{ job.status | humanize_token }}</span>
-          </div>
-          <div class="sidebar-entry-meta">
-            <span>{{ job.created_at }}</span>
-            <span>{{ host_labels.get(job.agent_id, job.agent_id) }}</span>
-            <span>{{ job.role or "session" }}</span>
-          </div>
-          {% if job.failure_reason %}
-          <p class="sidebar-entry-note danger-text">{{ job.failure_reason }}</p>
-          {% endif %}
-          {{ render_summary(summarize_job_diagnostics(job.type, job.diagnostics_json), "-") }}
-        </article>
-        {% else %}
-        <p class="muted">No jobs yet.</p>
-        {% endfor %}
-      </div>
-    </article>
-
-    <article class="panel sidebar-panel">
-      <div class="panel-head">
-        <h3>Session Event Log</h3>
-      </div>
-      <div class="sidebar-stream">
-        {% for event in events %}
-        <article class="sidebar-entry">
-          <div class="sidebar-entry-head">
-            <strong>{{ event.event_type | humanize_token }}</strong>
-            <span class="muted">{{ event.corrected_timestamp or event.created_at }}</span>
-          </div>
-          <div class="sidebar-entry-meta">
-            <span>{{ describe_source(event.source_type, event.source_ref, host_labels) }}</span>
-          </div>
-          {{ render_summary(summarize_event_payload(event.event_type, event.payload_json), "-") }}
-        </article>
-        {% else %}
-        <p class="muted">No session events yet.</p>
-        {% endfor %}
-      </div>
-    </article>
-  </aside>
-</section>
+  {% include "session_detail_fragment.html" %}
 </section>
 <script>
 (() => {
-  const screen = document.querySelector(".session-screen");
-  if (!(screen instanceof HTMLElement)) {
-    return;
-  }
-
-  const stages = Array.from(document.querySelectorAll("[data-pipeline-stage]"));
-  const navButtons = Array.from(document.querySelectorAll("[data-pipeline-jump]"));
-  const storageKey = screen.dataset.stageStorageKey || "";
-  const activeStageId = screen.dataset.activeStageId || "";
-  const activeStageStorageKey = screen.dataset.activeStageStorageKey || "";
-  if (!stages.length) {
-    return;
-  }
-
-  const setOpenStage = (targetStage) => {
-    stages.forEach((stageElement) => {
-      const isOpen = stageElement === targetStage;
-      stageElement.classList.toggle("is-open", isOpen);
-      const toggle = stageElement.querySelector("[data-stage-toggle]");
-      if (toggle) {
-        toggle.setAttribute("aria-expanded", String(isOpen));
-      }
-    });
-
-    navButtons.forEach((button) => {
-      const matches = button.getAttribute("data-pipeline-jump") === targetStage.id;
-      button.classList.toggle("focused", matches);
-    });
-
-    if (storageKey) {
-      window.sessionStorage.setItem(storageKey, targetStage.id);
-    }
-  };
-
-  stages.forEach((stageElement) => {
-    const toggle = stageElement.querySelector("[data-stage-toggle]");
-    if (!toggle) {
+  const initSessionScreen = (screen = document.querySelector(".session-screen")) => {
+    if (!(screen instanceof HTMLElement)) {
       return;
     }
-    toggle.addEventListener("click", () => {
-      setOpenStage(stageElement);
-    });
-  });
 
-  navButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const targetId = button.getAttribute("data-pipeline-jump");
-      const targetStage = targetId ? document.getElementById(targetId) : null;
-      if (!targetStage) {
+    const stages = Array.from(screen.querySelectorAll("[data-pipeline-stage]"));
+    const navButtons = Array.from(screen.querySelectorAll("[data-pipeline-jump]"));
+    const storageKey = screen.dataset.stageStorageKey || "";
+    const activeStageStorageKey = screen.dataset.activeStageStorageKey || "";
+    if (stages.length) {
+      const setOpenStage = (targetStage) => {
+        stages.forEach((stageElement) => {
+          const isOpen = stageElement === targetStage;
+          stageElement.classList.toggle("is-open", isOpen);
+          const toggle = stageElement.querySelector("[data-stage-toggle]");
+          if (toggle) {
+            toggle.setAttribute("aria-expanded", String(isOpen));
+          }
+        });
+
+        navButtons.forEach((button) => {
+          const matches = button.getAttribute("data-pipeline-jump") === targetStage.id;
+          button.classList.toggle("focused", matches);
+        });
+
+        if (storageKey) {
+          window.sessionStorage.setItem(storageKey, targetStage.id);
+        }
+      };
+
+      stages.forEach((stageElement) => {
+        const toggle = stageElement.querySelector("[data-stage-toggle]");
+        if (!toggle || toggle.dataset.stageBound === "true") {
+          return;
+        }
+        toggle.dataset.stageBound = "true";
+        toggle.addEventListener("click", () => {
+          setOpenStage(stageElement);
+        });
+      });
+
+      navButtons.forEach((button) => {
+        if (button.dataset.pipelineBound === "true") {
+          return;
+        }
+        button.dataset.pipelineBound = "true";
+        button.addEventListener("click", () => {
+          const targetId = button.getAttribute("data-pipeline-jump");
+          const targetStage = targetId ? screen.querySelector(`#${targetId}`) : null;
+          if (!(targetStage instanceof HTMLElement)) {
+            return;
+          }
+          setOpenStage(targetStage);
+          targetStage.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
+
+      const currentActiveStage =
+        stages.find((stageElement) => stageElement.dataset.stageStatus === "active") ||
+        stages.find((stageElement) => stageElement.id === (screen.dataset.activeStageId || "")) ||
+        null;
+      const savedStageId = storageKey ? window.sessionStorage.getItem(storageKey) : "";
+      const savedActiveStageId = activeStageStorageKey ? window.sessionStorage.getItem(activeStageStorageKey) : "";
+      const savedStage = savedStageId
+        ? stages.find((stageElement) => stageElement.id === savedStageId)
+        : null;
+      const shouldAdvanceToActiveStage =
+        !!currentActiveStage &&
+        currentActiveStage.id !== savedActiveStageId &&
+        (
+          !savedStage ||
+          savedStageId === savedActiveStageId ||
+          (!savedActiveStageId && savedStage.dataset.stageStatus === "complete")
+        );
+      const initialStage =
+        (shouldAdvanceToActiveStage ? currentActiveStage : null) ||
+        savedStage ||
+        currentActiveStage ||
+        stages.find((stageElement) => stageElement.classList.contains("is-open")) ||
+        stages[0];
+      setOpenStage(initialStage);
+      screen.dataset.activeStageId = currentActiveStage ? currentActiveStage.id : initialStage.id;
+      if (activeStageStorageKey && currentActiveStage) {
+        window.sessionStorage.setItem(activeStageStorageKey, currentActiveStage.id);
+      }
+    }
+
+    const form = screen.querySelector("#session-build-form");
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+
+    const buildStateKey = screen.dataset.buildStorageKey || "";
+    const repoSelect = screen.querySelector("#build-repo-id");
+    const commitQuery = screen.querySelector("#commit-query");
+    const commitResults = screen.querySelector("#commit-results");
+    const gitShaInput = screen.querySelector("#build-git-sha");
+    const loadConfigButton = screen.querySelector("#load-build-config");
+    const searchCommitsButton = screen.querySelector("#search-commits");
+    const queueBuildButton = screen.querySelector("#queue-build-button");
+    const statusText = screen.querySelector("#build-config-status");
+    const summaryField = screen.querySelector("#build-config-summary");
+    const buildConfigJson = screen.querySelector("#build-config-json");
+    const buildRoleSelect = screen.querySelector("#build-role");
+    const buildRoleHint = screen.querySelector("#build-role-hint");
+    const machineLogStatPeriodMs = screen.querySelector("#build-machine-log-stat-period-ms");
+    if (
+      !(repoSelect instanceof HTMLSelectElement) ||
+      !(commitQuery instanceof HTMLInputElement) ||
+      !(commitResults instanceof HTMLElement) ||
+      !(gitShaInput instanceof HTMLInputElement) ||
+      !(loadConfigButton instanceof HTMLButtonElement) ||
+      !(searchCommitsButton instanceof HTMLButtonElement) ||
+      !(queueBuildButton instanceof HTMLButtonElement) ||
+      !(statusText instanceof HTMLElement) ||
+      !(summaryField instanceof HTMLElement) ||
+      !(buildConfigJson instanceof HTMLInputElement) ||
+      !(buildRoleSelect instanceof HTMLSelectElement) ||
+      !(buildRoleHint instanceof HTMLElement) ||
+      !(machineLogStatPeriodMs instanceof HTMLInputElement)
+    ) {
+      return;
+    }
+
+    const emptySummaryText = "Load a commit to inspect the resolved GitHub-build defaults.";
+    const forcedMachineLogDetail = 1;
+    let loadedConfigSha = "";
+    let loadedBuildConfig = null;
+    let loadedBuildConstraints = null;
+
+    const readState = () => {
+      if (!buildStateKey) {
+        return null;
+      }
+      try {
+        const raw = window.sessionStorage.getItem(buildStateKey);
+        return raw ? JSON.parse(raw) : null;
+      } catch (_error) {
+        return null;
+      }
+    };
+
+    const writeState = () => {
+      if (!buildStateKey) {
         return;
       }
-      setOpenStage(targetStage);
-      targetStage.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  });
-
-  const currentActiveStage =
-    (activeStageId ? stages.find((stageElement) => stageElement.id === activeStageId) : null) ||
-    stages.find((stageElement) => stageElement.dataset.stageStatus === "active") ||
-    null;
-  const savedStageId = storageKey ? window.sessionStorage.getItem(storageKey) : "";
-  const savedActiveStageId = activeStageStorageKey ? window.sessionStorage.getItem(activeStageStorageKey) : "";
-  const savedStage = savedStageId
-    ? stages.find((stageElement) => stageElement.id === savedStageId)
-    : null;
-  const shouldAdvanceToActiveStage =
-    !!currentActiveStage &&
-    currentActiveStage.id !== savedActiveStageId &&
-    (
-      !savedStage ||
-      savedStageId === savedActiveStageId ||
-      (!savedActiveStageId && savedStage.dataset.stageStatus === "complete")
-    );
-  const initialStage =
-    (shouldAdvanceToActiveStage ? currentActiveStage : null) ||
-    savedStage ||
-    currentActiveStage ||
-    stages.find((stageElement) => stageElement.classList.contains("is-open")) ||
-    stages[0];
-  setOpenStage(initialStage);
-  if (activeStageStorageKey && currentActiveStage) {
-    window.sessionStorage.setItem(activeStageStorageKey, currentActiveStage.id);
-  }
-})();
-
-(() => {
-  const form = document.getElementById("session-build-form");
-  if (!form) {
-    return;
-  }
-
-  const repoSelect = document.getElementById("build-repo-id");
-  const commitQuery = document.getElementById("commit-query");
-  const commitResults = document.getElementById("commit-results");
-  const gitShaInput = document.getElementById("build-git-sha");
-  const loadConfigButton = document.getElementById("load-build-config");
-  const searchCommitsButton = document.getElementById("search-commits");
-  const queueBuildButton = document.getElementById("queue-build-button");
-  const statusText = document.getElementById("build-config-status");
-  const summaryField = document.getElementById("build-config-summary");
-  const emptySummaryText = "Load a commit to inspect the resolved GitHub-build defaults.";
-  const buildConfigJson = document.getElementById("build-config-json");
-  const buildRoleSelect = document.getElementById("build-role");
-  const buildRoleHint = document.getElementById("build-role-hint");
-  const machineLogStatPeriodMs = document.getElementById("build-machine-log-stat-period-ms");
-  const forcedMachineLogDetail = 1;
-
-  let loadedConfigSha = "";
-  let loadedBuildConfig = null;
-  let loadedBuildConstraints = null;
-
-  const setStatus = (message, isError = false) => {
-    statusText.textContent = message;
-    statusText.classList.toggle("danger-text", isError);
-  };
-
-  const fetchJson = async (url) => {
-    const response = await fetch(url, { headers: { Accept: "application/json" } });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload.detail || `Request failed with status ${response.status}`);
-    }
-    return payload;
-  };
-
-  const machineLogDetailLabel = (value) => (value === 1 ? "Packet" : "Summary");
-
-  const normalizeBuildConfigForUi = (buildConfig) => ({
-    ...buildConfig,
-    machine_log_detail: forcedMachineLogDetail,
-  });
-
-  const updateBuildTargetUi = () => {
-    if (!buildRoleSelect || !queueBuildButton) {
-      return;
-    }
-    const role = buildRoleSelect.value || "TX";
-    queueBuildButton.textContent = `Queue ${role} Build`;
-    if (!buildRoleHint) {
-      return;
-    }
-    const currentArtifact = role === "TX" ? buildRoleHint.dataset.txArtifact : buildRoleHint.dataset.rxArtifact;
-    buildRoleHint.textContent = currentArtifact
-      ? `Build auto-assigns to ${role} slot and replaces ${currentArtifact}.`
-      : `Build auto-assigns to ${role} slot.`;
-  };
-
-  const renderSummary = (buildConfig, sha) => {
-    summaryField.textContent = [
-      `Git SHA: ${sha}`,
-      "Human log: disabled",
-      "Machine log: enabled",
-      `Detail level: ${machineLogDetailLabel(buildConfig.machine_log_detail)}`,
-      `Stat period: ${buildConfig.machine_log_stat_period_ms} ms`,
-    ].join("\n");
-  };
-
-  const populateConfigForm = (payload) => {
-    loadedBuildConfig = normalizeBuildConfigForUi(payload.build_config);
-    loadedBuildConstraints = payload.constraints;
-    machineLogStatPeriodMs.value = "";
-    machineLogStatPeriodMs.min = String(payload.constraints.machine_log_stat_period_ms_min ?? 0);
-    machineLogStatPeriodMs.placeholder = String(loadedBuildConfig.machine_log_stat_period_ms);
-    renderSummary(loadedBuildConfig, payload.git_sha);
-  };
-
-  const serializeBuildConfig = () => {
-    if (!loadedBuildConfig) {
-      throw new Error("Load config for this SHA first.");
-    }
-    const statPeriodValue = machineLogStatPeriodMs.value.trim();
-    const effectiveStatPeriod =
-      statPeriodValue === "" ? loadedBuildConfig.machine_log_stat_period_ms : Number(statPeriodValue);
-    const minStatPeriod = loadedBuildConstraints?.machine_log_stat_period_ms_min ?? 0;
-    if (!Number.isInteger(effectiveStatPeriod) || effectiveStatPeriod < minStatPeriod) {
-      throw new Error(`Stat period must be at least ${minStatPeriod} ms.`);
-    }
-    return {
-      machine_log_detail: forcedMachineLogDetail,
-      machine_log_stat_period_ms: effectiveStatPeriod,
+      try {
+        window.sessionStorage.setItem(
+          buildStateKey,
+          JSON.stringify({
+            repoId: repoSelect.value,
+            commitQuery: commitQuery.value,
+            gitSha: gitShaInput.value,
+            buildAgentId: form.elements.namedItem("build_agent_id")?.value || "",
+            role: buildRoleSelect.value,
+            machineLogStatPeriodMs: machineLogStatPeriodMs.value,
+            loadedConfigSha,
+            loadedBuildConfig,
+            loadedBuildConstraints,
+            statusText: statusText.textContent || "",
+            statusIsError: statusText.classList.contains("danger-text"),
+            summaryText: summaryField.textContent || emptySummaryText,
+            queueEnabled: !queueBuildButton.disabled,
+          })
+        );
+      } catch (_error) {
+        return;
+      }
     };
-  };
 
-  const updateSummaryPreview = () => {
-    if (!loadedBuildConfig) {
-      return;
-    }
-    try {
-      renderSummary(serializeBuildConfig(), loadedConfigSha || gitShaInput.value.trim());
-    } catch (error) {
-      renderSummary(loadedBuildConfig, loadedConfigSha || gitShaInput.value.trim());
-    }
-  };
+    const clearState = () => {
+      if (!buildStateKey) {
+        return;
+      }
+      window.sessionStorage.removeItem(buildStateKey);
+    };
 
-  const renderCommitResults = (commits) => {
-    commitResults.innerHTML = "";
-    if (!commits.length) {
-      commitResults.innerHTML = '<p class="muted">No commits found.</p>';
-      return;
-    }
-    for (const commit of commits) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "commit-choice";
-      button.innerHTML = `
-        <strong>${commit.short_sha}</strong>
-        <span>${commit.message}</span>
-        <small>${commit.author_name || "unknown author"} | ${commit.author_date || "-"}</small>
-      `;
-      button.addEventListener("click", async () => {
-        for (const choice of commitResults.querySelectorAll(".commit-choice")) {
-          if (choice !== button) {
-            choice.remove();
-          }
-        }
-        button.classList.add("is-selected");
-        button.disabled = true;
-        gitShaInput.value = commit.sha;
-        commitQuery.value = commit.short_sha;
-        await loadBuildConfig();
-      });
-      commitResults.appendChild(button);
-    }
-  };
+    const setStatus = (message, isError = false) => {
+      statusText.textContent = message;
+      statusText.classList.toggle("danger-text", isError);
+      writeState();
+    };
 
-  const searchCommits = async () => {
-    if (!repoSelect.value) {
-      setStatus("Select a repo first.", true);
-      return;
-    }
-    setStatus("Loading commits...");
-    commitResults.innerHTML = "";
-    try {
-      const query = commitQuery.value.trim();
-      const suffix = query ? `?q=${encodeURIComponent(query)}` : "";
-      const commits = await fetchJson(`/api/repos/${encodeURIComponent(repoSelect.value)}/commits${suffix}`);
-      renderCommitResults(commits);
-      setStatus("Select a commit or enter a SHA.");
-    } catch (error) {
-      setStatus(error.message, true);
-    }
-  };
+    const fetchJson = async (url) => {
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || `Request failed with status ${response.status}`);
+      }
+      return payload;
+    };
 
-  const loadBuildConfig = async () => {
-    if (!repoSelect.value || !gitShaInput.value.trim()) {
-      setStatus("Choose a repo and enter a SHA.", true);
-      return;
-    }
-    queueBuildButton.disabled = true;
-    setStatus("Loading config...");
-    try {
-      const payload = await fetchJson(
-        `/api/repos/${encodeURIComponent(repoSelect.value)}/build-config?git_sha=${encodeURIComponent(gitShaInput.value.trim())}`
-      );
-      gitShaInput.value = payload.git_sha;
-      loadedConfigSha = payload.git_sha;
-      populateConfigForm(payload);
-      queueBuildButton.disabled = false;
-      setStatus(`Loaded ${payload.git_sha}. Packet detail will be used for this build.`);
-    } catch (error) {
-      loadedConfigSha = "";
-      loadedBuildConfig = null;
-      loadedBuildConstraints = null;
-      summaryField.textContent = emptySummaryText;
-      setStatus(error.message, true);
-    }
-  };
+    const machineLogDetailLabel = (value) => (value === 1 ? "Packet" : "Summary");
+    const normalizeBuildConfigForUi = (buildConfig) => ({
+      ...buildConfig,
+      machine_log_detail: forcedMachineLogDetail,
+    });
 
-  form.addEventListener("submit", (event) => {
-    try {
-      if (loadedConfigSha !== gitShaInput.value.trim()) {
+    const updateBuildTargetUi = () => {
+      const role = buildRoleSelect.value || "TX";
+      queueBuildButton.textContent = `Queue ${role} Build`;
+      const currentArtifact = role === "TX" ? buildRoleHint.dataset.txArtifact : buildRoleHint.dataset.rxArtifact;
+      buildRoleHint.textContent = currentArtifact
+        ? `Build auto-assigns to ${role} slot and replaces ${currentArtifact}.`
+        : `Build auto-assigns to ${role} slot.`;
+      writeState();
+    };
+
+    const renderSummary = (buildConfig, sha) => {
+      summaryField.textContent = [
+        `Git SHA: ${sha}`,
+        "Human log: disabled",
+        "Machine log: enabled",
+        `Detail level: ${machineLogDetailLabel(buildConfig.machine_log_detail)}`,
+        `Stat period: ${buildConfig.machine_log_stat_period_ms} ms`,
+      ].join("\n");
+      writeState();
+    };
+
+    const populateConfigForm = (payload) => {
+      loadedBuildConfig = normalizeBuildConfigForUi(payload.build_config);
+      loadedBuildConstraints = payload.constraints;
+      machineLogStatPeriodMs.min = String(payload.constraints.machine_log_stat_period_ms_min ?? 0);
+      machineLogStatPeriodMs.placeholder = String(loadedBuildConfig.machine_log_stat_period_ms);
+      if (machineLogStatPeriodMs.value === "") {
+        machineLogStatPeriodMs.value = "";
+      }
+      renderSummary(loadedBuildConfig, payload.git_sha);
+    };
+
+    const serializeBuildConfig = () => {
+      if (!loadedBuildConfig) {
         throw new Error("Load config for this SHA first.");
       }
-      const payload = serializeBuildConfig();
-      buildConfigJson.value = JSON.stringify(payload);
-      renderSummary(payload, gitShaInput.value.trim());
-    } catch (error) {
-      event.preventDefault();
-      setStatus(error.message, true);
-    }
-  });
+      const statPeriodValue = machineLogStatPeriodMs.value.trim();
+      const effectiveStatPeriod =
+        statPeriodValue === "" ? loadedBuildConfig.machine_log_stat_period_ms : Number(statPeriodValue);
+      const minStatPeriod = loadedBuildConstraints?.machine_log_stat_period_ms_min ?? 0;
+      if (!Number.isInteger(effectiveStatPeriod) || effectiveStatPeriod < minStatPeriod) {
+        throw new Error(`Stat period must be at least ${minStatPeriod} ms.`);
+      }
+      return {
+        machine_log_detail: forcedMachineLogDetail,
+        machine_log_stat_period_ms: effectiveStatPeriod,
+      };
+    };
 
-  repoSelect.addEventListener("change", () => {
-    loadedConfigSha = "";
-    loadedBuildConfig = null;
-    loadedBuildConstraints = null;
-    queueBuildButton.disabled = true;
-    commitResults.innerHTML = "";
-    summaryField.textContent = emptySummaryText;
-    setStatus("Load a commit before queueing the build.");
-  });
+    const updateSummaryPreview = () => {
+      if (!loadedBuildConfig) {
+        return;
+      }
+      try {
+        renderSummary(serializeBuildConfig(), loadedConfigSha || gitShaInput.value.trim());
+      } catch (_error) {
+        renderSummary(loadedBuildConfig, loadedConfigSha || gitShaInput.value.trim());
+      }
+    };
 
-  gitShaInput.addEventListener("input", () => {
-    if (gitShaInput.value.trim() !== loadedConfigSha) {
+    const renderCommitResults = (commits) => {
+      commitResults.innerHTML = "";
+      if (!commits.length) {
+        commitResults.innerHTML = '<p class="muted">No commits found.</p>';
+        writeState();
+        return;
+      }
+      for (const commit of commits) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "commit-choice";
+        button.innerHTML = `
+          <strong>${commit.short_sha}</strong>
+          <span>${commit.message}</span>
+          <small>${commit.author_name || "unknown author"} | ${commit.author_date || "-"}</small>
+        `;
+        button.addEventListener("click", async () => {
+          for (const choice of commitResults.querySelectorAll(".commit-choice")) {
+            if (choice !== button) {
+              choice.remove();
+            }
+          }
+          button.classList.add("is-selected");
+          button.disabled = true;
+          gitShaInput.value = commit.sha;
+          commitQuery.value = commit.short_sha;
+          writeState();
+          await loadBuildConfig();
+        });
+        commitResults.appendChild(button);
+      }
+      writeState();
+    };
+
+    const searchCommits = async () => {
+      if (!repoSelect.value) {
+        setStatus("Select a repo first.", true);
+        return;
+      }
+      setStatus("Loading commits...");
+      commitResults.innerHTML = "";
+      try {
+        const query = commitQuery.value.trim();
+        const suffix = query ? `?q=${encodeURIComponent(query)}` : "";
+        const commits = await fetchJson(`/api/repos/${encodeURIComponent(repoSelect.value)}/commits${suffix}`);
+        renderCommitResults(commits);
+        setStatus("Select a commit or enter a SHA.");
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    };
+
+    const loadBuildConfig = async () => {
+      if (!repoSelect.value || !gitShaInput.value.trim()) {
+        setStatus("Choose a repo and enter a SHA.", true);
+        return;
+      }
       queueBuildButton.disabled = true;
-    }
-  });
+      setStatus("Loading config...");
+      try {
+        const payload = await fetchJson(
+          `/api/repos/${encodeURIComponent(repoSelect.value)}/build-config?git_sha=${encodeURIComponent(gitShaInput.value.trim())}`
+        );
+        gitShaInput.value = payload.git_sha;
+        loadedConfigSha = payload.git_sha;
+        populateConfigForm(payload);
+        queueBuildButton.disabled = false;
+        setStatus(`Loaded ${payload.git_sha}. Packet detail will be used for this build.`);
+      } catch (error) {
+        loadedConfigSha = "";
+        loadedBuildConfig = null;
+        loadedBuildConstraints = null;
+        summaryField.textContent = emptySummaryText;
+        setStatus(error.message, true);
+      }
+      writeState();
+    };
 
-  if (buildRoleSelect) {
-    buildRoleSelect.addEventListener("change", updateBuildTargetUi);
-  }
-  machineLogStatPeriodMs.addEventListener("input", updateSummaryPreview);
-  searchCommitsButton.addEventListener("click", searchCommits);
-  loadConfigButton.addEventListener("click", loadBuildConfig);
-  updateBuildTargetUi();
+    const restoreState = () => {
+      const state = readState();
+      if (!state) {
+        updateBuildTargetUi();
+        return;
+      }
+      repoSelect.value = state.repoId || repoSelect.value;
+      commitQuery.value = state.commitQuery || "";
+      gitShaInput.value = state.gitSha || "";
+      buildRoleSelect.value = state.role || buildRoleSelect.value;
+      machineLogStatPeriodMs.value = state.machineLogStatPeriodMs || "";
+      const buildAgentSelect = form.elements.namedItem("build_agent_id");
+      if (buildAgentSelect instanceof HTMLSelectElement && state.buildAgentId) {
+        buildAgentSelect.value = state.buildAgentId;
+      }
+      loadedConfigSha = state.loadedConfigSha || "";
+      loadedBuildConfig = state.loadedBuildConfig || null;
+      loadedBuildConstraints = state.loadedBuildConstraints || null;
+      statusText.textContent = state.statusText || "Load a commit before queueing the build.";
+      statusText.classList.toggle("danger-text", Boolean(state.statusIsError));
+      summaryField.textContent = state.summaryText || emptySummaryText;
+      if (loadedBuildConfig && loadedConfigSha && loadedConfigSha === gitShaInput.value.trim()) {
+        queueBuildButton.disabled = !state.queueEnabled;
+      } else {
+        queueBuildButton.disabled = true;
+      }
+      updateBuildTargetUi();
+    };
+
+    if (form.dataset.buildBound !== "true") {
+      form.dataset.buildBound = "true";
+      form.addEventListener("submit", (event) => {
+        try {
+          if (loadedConfigSha !== gitShaInput.value.trim()) {
+            throw new Error("Load config for this SHA first.");
+          }
+          const payload = serializeBuildConfig();
+          buildConfigJson.value = JSON.stringify(payload);
+          renderSummary(payload, gitShaInput.value.trim());
+          clearState();
+        } catch (error) {
+          event.preventDefault();
+          setStatus(error.message, true);
+        }
+      });
+    }
+
+    if (repoSelect.dataset.buildBound !== "true") {
+      repoSelect.dataset.buildBound = "true";
+      repoSelect.addEventListener("change", () => {
+        loadedConfigSha = "";
+        loadedBuildConfig = null;
+        loadedBuildConstraints = null;
+        queueBuildButton.disabled = true;
+        commitResults.innerHTML = "";
+        summaryField.textContent = emptySummaryText;
+        setStatus("Load a commit before queueing the build.");
+        writeState();
+      });
+    }
+
+    if (gitShaInput.dataset.buildBound !== "true") {
+      gitShaInput.dataset.buildBound = "true";
+      gitShaInput.addEventListener("input", () => {
+        if (gitShaInput.value.trim() !== loadedConfigSha) {
+          queueBuildButton.disabled = true;
+        }
+        writeState();
+      });
+    }
+
+    if (buildRoleSelect.dataset.buildBound !== "true") {
+      buildRoleSelect.dataset.buildBound = "true";
+      buildRoleSelect.addEventListener("change", updateBuildTargetUi);
+    }
+    if (machineLogStatPeriodMs.dataset.buildBound !== "true") {
+      machineLogStatPeriodMs.dataset.buildBound = "true";
+      machineLogStatPeriodMs.addEventListener("input", updateSummaryPreview);
+      machineLogStatPeriodMs.addEventListener("change", writeState);
+    }
+    if (commitQuery.dataset.buildBound !== "true") {
+      commitQuery.dataset.buildBound = "true";
+      commitQuery.addEventListener("input", writeState);
+    }
+    if (searchCommitsButton.dataset.buildBound !== "true") {
+      searchCommitsButton.dataset.buildBound = "true";
+      searchCommitsButton.addEventListener("click", searchCommits);
+    }
+    if (loadConfigButton.dataset.buildBound !== "true") {
+      loadConfigButton.dataset.buildBound = "true";
+      loadConfigButton.addEventListener("click", loadBuildConfig);
+    }
+    const buildAgentSelect = form.elements.namedItem("build_agent_id");
+    if (buildAgentSelect instanceof HTMLSelectElement && buildAgentSelect.dataset.buildBound !== "true") {
+      buildAgentSelect.dataset.buildBound = "true";
+      buildAgentSelect.addEventListener("change", writeState);
+    }
+
+    restoreState();
+  };
+
+  window.rtmsInitSessionScreen = initSessionScreen;
+  initSessionScreen();
 })();
 </script>
 {% endblock %}

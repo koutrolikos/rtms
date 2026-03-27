@@ -23,12 +23,89 @@
       </div>
     </div>
     <div class="hero-status report-page-hero-status">
+      <a class="button secondary" href="{{ report_json_url }}">Download Report JSON</a>
+      <a class="button secondary" href="{{ raw_artifacts_page_url }}">Open Raw Artifacts</a>
       <a class="button secondary" href="/sessions/{{ session.id }}">Back to Session</a>
     </div>
   </section>
 
-  <div class="report-shell">
-    {{ report_html | safe }}
+  <section class="panel report-controls-panel">
+    <div class="report-controls">
+      <button type="button" class="secondary" id="report-collapse-evidence">Collapse All Evidence</button>
+      <button type="button" class="secondary" id="report-expand-summary">Jump to Summary</button>
+    </div>
+  </section>
+
+  <div class="report-layout">
+    <aside class="panel report-toc-panel">
+      <div class="panel-head">
+        <h3>Contents</h3>
+      </div>
+      <nav class="report-toc" id="report-toc" aria-label="Report contents"></nav>
+    </aside>
+
+    <div class="report-shell" id="report-shell">
+      {{ report_html | safe }}
+    </div>
   </div>
 </section>
+<script>
+(() => {
+  const reportShell = document.getElementById("report-shell");
+  const toc = document.getElementById("report-toc");
+  const collapseButton = document.getElementById("report-collapse-evidence");
+  const expandSummaryButton = document.getElementById("report-expand-summary");
+  if (!(reportShell instanceof HTMLElement) || !(toc instanceof HTMLElement)) {
+    return;
+  }
+
+  const sections = Array.from(reportShell.querySelectorAll("[data-report-section]"));
+  toc.innerHTML = "";
+  sections.forEach((section) => {
+    const title = section.getAttribute("data-report-title");
+    const id = section.id;
+    if (!title || !id) {
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = `#${id}`;
+    link.textContent = title;
+    toc.appendChild(link);
+  });
+
+  if (collapseButton instanceof HTMLButtonElement) {
+    collapseButton.addEventListener("click", () => {
+      reportShell.querySelectorAll(".report-expand[open]").forEach((item) => {
+        item.removeAttribute("open");
+      });
+    });
+  }
+
+  if (expandSummaryButton instanceof HTMLButtonElement) {
+    expandSummaryButton.addEventListener("click", () => {
+      const summary = reportShell.querySelector("#report-verdict");
+      if (summary instanceof HTMLElement) {
+        summary.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  }
+
+  const openHashTarget = () => {
+    if (!window.location.hash) {
+      return;
+    }
+    const target = reportShell.querySelector(window.location.hash);
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const detail = target.closest("details");
+    if (detail instanceof HTMLDetailsElement) {
+      detail.open = true;
+    }
+  };
+
+  window.addEventListener("hashchange", openHashTarget);
+  openHashTarget();
+})();
+</script>
 {% endblock %}

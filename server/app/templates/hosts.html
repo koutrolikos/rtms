@@ -1,124 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Hosts{% endblock %}
 {% block content %}
-{% from "_summary.html" import render_copy_value, render_tags %}
-{% set summary = namespace(idle=0, busy=0, build=0) %}
-{% for host in hosts %}
-  {% if host_status[host.id] == "idle" %}
-    {% set summary.idle = summary.idle + 1 %}
-  {% endif %}
-  {% if host_status[host.id] == "busy" %}
-    {% set summary.busy = summary.busy + 1 %}
-  {% endif %}
-  {% if host.capabilities_json.build_capable %}
-    {% set summary.build = summary.build + 1 %}
-  {% endif %}
-{% endfor %}
 <section
   class="hosts-screen"
   data-auto-refresh-url="/hosts/live"
+  data-auto-refresh-fragment-url="/hosts/fragment"
+  data-auto-refresh-target-id="hosts-live-shell"
   data-auto-refresh-version="{{ live_version }}"
   data-auto-refresh-interval-ms="2500"
 >
-  <section class="hosts-header">
-    <div class="hosts-header-main">
-      <h1>Hosts</h1>
-    </div>
-    <div class="hosts-header-meta">
-      <div class="hosts-header-cell">
-        <span class="hero-meta-label">Listen</span>
-        <span class="hosts-header-value">{{ settings.host }}:{{ settings.port }}</span>
-      </div>
-      <div class="hosts-header-cell hosts-header-cell-url">
-        <span class="hero-meta-label">Public URL</span>
-        {{ render_copy_value(settings.effective_public_base_url, settings.effective_public_base_url, "public url", true) }}
-      </div>
-    </div>
-  </section>
-
-  <section class="overview-strip hosts-overview-strip">
-    <article class="overview-card">
-      <span class="overview-label">Agents</span>
-      <span class="overview-value">{{ hosts | length }}</span>
-      <span class="overview-meta">registered</span>
-    </article>
-    <article class="overview-card">
-      <span class="overview-label">Build Hosts</span>
-      <span class="overview-value">{{ summary.build }}</span>
-      <span class="overview-meta">build capable</span>
-    </article>
-    <article class="overview-card">
-      <span class="overview-label">Idle</span>
-      <span class="overview-value">{{ summary.idle }}</span>
-      <span class="overview-meta">{{ summary.busy }} busy</span>
-    </article>
-    <article class="overview-card">
-      <span class="overview-label">Sessions</span>
-      <span class="overview-value">{{ sessions | length }}</span>
-      <span class="overview-meta">recent</span>
-    </article>
-  </section>
-
-  <section class="hosts-grid">
-    {% for host in hosts %}
-    <article class="panel host-card">
-      <div class="host-card-head">
-        <div class="host-card-title">
-          <h3>{{ host.label or host.name }}</h3>
-          {% if host.hostname and host.hostname != (host.label or host.name) %}
-          <p class="muted">{{ host.hostname }}</p>
-          {% endif %}
-        </div>
-        <span class="chip chip-{{ host_status[host.id] }}">{{ host_status[host.id] }}</span>
-      </div>
-      <div class="host-capability-row">
-        {{ render_tags(summarize_capabilities(host.capabilities_json), "No capabilities") }}
-      </div>
-      <dl class="host-fact-grid">
-        <div><dt>Name</dt><dd>{{ host.name }}</dd></div>
-        <div><dt>Hostname</dt><dd>{{ host.hostname }}</dd></div>
-        <div><dt>IP</dt><dd>{{ host.ip_address or "n/a" }}</dd></div>
-        <div><dt>Probes</dt><dd>{{ host.connected_probe_count }}</dd></div>
-        <div><dt>Version</dt><dd>{{ host.software_version or "n/a" }}</dd></div>
-        <div><dt>Location</dt><dd>{{ host.last_reported_location or "n/a" }}</dd></div>
-        <div class="wide"><dt>Last Seen</dt><dd>{{ host.last_seen_at }}</dd></div>
-      </dl>
-    </article>
-    {% else %}
-    <article class="panel host-empty">
-      <p class="muted">No agents registered yet.</p>
-    </article>
-    {% endfor %}
-  </section>
-
-  <section class="panel hosts-sessions-panel">
-    <div class="panel-head">
-      <h2>Recent Sessions</h2>
-    </div>
-    <div class="table-shell">
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Created</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for session in sessions %}
-          <tr>
-            <td><a href="/sessions/{{ session.id }}">{{ session.name }}</a></td>
-            <td>{{ session.status | humanize_token }}</td>
-            <td>{{ session.created_at }}</td>
-          </tr>
-          {% else %}
-          <tr>
-            <td colspan="3" class="muted">No sessions created yet.</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+  {% include "hosts_fragment.html" %}
 </section>
 {% endblock %}

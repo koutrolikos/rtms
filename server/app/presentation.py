@@ -1,19 +1,24 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import PurePosixPath
 from typing import Any
 
 from jinja2 import Environment
 
+from shared.time_sync import utc_now
+
 
 def register_template_helpers(environment: Environment) -> None:
     environment.filters["basename"] = basename
     environment.filters["human_bytes"] = human_bytes
+    environment.filters["human_relative_time"] = human_relative_time
     environment.filters["humanize_token"] = humanize_token
     environment.filters["short_id"] = short_id
     environment.filters["short_sha"] = short_sha
     environment.globals.update(
+        clamp01=clamp01,
         describe_source=describe_source,
         summarize_artifact_metadata=summarize_artifact_metadata,
         summarize_capabilities=summarize_capabilities,
@@ -53,6 +58,36 @@ def human_bytes(value: Any) -> str:
     return f"{size:.1f} {units[unit_index]}"
 
 
+def human_relative_time(value: Any) -> str:
+    if value in (None, ""):
+        return "-"
+    if not isinstance(value, datetime):
+        return str(value)
+    normalized = _as_utc(value)
+    delta = utc_now() - normalized
+    total_seconds = int(abs(delta.total_seconds()))
+    if total_seconds < 60:
+        label = "just now" if delta.total_seconds() >= 0 else "in moments"
+        return label
+    if total_seconds < 3600:
+        minutes = total_seconds // 60
+        suffix = "ago" if delta.total_seconds() >= 0 else "from now"
+        return f"{minutes}m {suffix}"
+    if total_seconds < 86400:
+        hours = total_seconds // 3600
+        suffix = "ago" if delta.total_seconds() >= 0 else "from now"
+        return f"{hours}h {suffix}"
+    days = total_seconds // 86400
+    suffix = "ago" if delta.total_seconds() >= 0 else "from now"
+    return f"{days}d {suffix}"
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def short_id(value: Any, length: int = 8) -> str:
     if value in (None, ""):
         return ""
@@ -63,6 +98,18 @@ def short_sha(value: Any, length: int = 12) -> str:
     if value in (None, ""):
         return ""
     return str(value)[:length]
+
+
+def clamp01(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if number < 0:
+        return 0.0
+    if number > 1:
+        return 1.0
+    return number
 
 
 def describe_source(source_type: Any, source_ref: Any = None, host_labels: dict[str, str] | None = None) -> str:

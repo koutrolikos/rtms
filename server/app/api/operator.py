@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from pathlib import Path
 
 import httpx
@@ -8,11 +9,12 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from server.app.core.config import get_settings
 from server.app.db.session import get_db
-from server.app.models.entities import AgentHost, Artifact, RawArtifact
+from server.app.models.entities import AgentHost, Artifact, RawArtifact, Report, Session as SessionModel
 from server.app.presentation import register_template_helpers
 from server.app.services.agents import visible_agent_status
 from server.app.services.github import GitHubService
@@ -45,7 +47,7 @@ from shared.high_altitude_cc import (
     high_altitude_cc_build_constraints,
     parse_high_altitude_cc_build_config,
 )
-from shared.enums import ArtifactStatus, Role
+from shared.enums import ArtifactStatus, ReportStatus, Role, SessionState
 from shared.schemas import (
     AnnotationCreateRequest,
     AssignArtifactRequest,
@@ -110,28 +112,273 @@ def _coerce_operator_build_config(
     return build_config.model_copy(update={"machine_log_detail": 1})
 
 
+def _list_hosts(db: Session) -> list[AgentHost]:
+    return db.query(AgentHost).order_by(AgentHost.name.asc()).all()
+
+
+def _report_and_raw_maps(db: Session, session_ids: list[str]) -> tuple[dict[str, Report], dict[str, int]]:
+    if not session_ids:
+        return {}, {}
+    reports = {
+        report.session_id: report
+        for report in db.query(Report).filter(Report.session_id.in_(session_ids)).all()
+    }
+    raw_counts = {
+        session_id: count
+        for session_id, count in (
+            db.query(RawArtifact.session_id, func.count(RawArtifact.id))
+            .filter(RawArtifact.session_id.in_(session_ids))
+            .group_by(RawArtifact.session_id)
+            .all()
+        )
+    }
+    return reports, raw_counts
+
+
+def _session_group(status: str) -> str:
+    if status in {SessionState.FAILED.value, SessionState.CANCELLED.value}:
+        return "needs_attention"
+    if status == SessionState.REPORT_READY.value:
+        return "completed"
+    return "active"
+
+
+def _start_blockers(session: SessionModel) -> list[str]:
+    blockers: list[str] = []
+    if not session.tx_agent_id:
+        blockers.append("Assign a TX host.")
+    if not session.rx_agent_id:
+        blockers.append("Assign an RX host.")
+    if not session.tx_artifact_id:
+        blockers.append("Assign or build a TX artifact.")
+    if not session.rx_artifact_id:
+        blockers.append("Assign or build an RX artifact.")
+    return blockers
+
+
+def _next_action_for_session(session: SessionModel, report: Report | None) -> dict[str, str]:
+    report_ready = bool(report and report.html_storage_path)
+    setup_ready = bool(session.tx_agent_id and session.rx_agent_id)
+    artifacts_ready = bool(session.tx_artifact_id and session.rx_artifact_id)
+    session_url = f"/sessions/{session.id}"
+
+    if session.status in {SessionState.FAILED.value, SessionState.CANCELLED.value}:
+        return {
+            "title": "Review the failure state",
+            "detail": "Inspect jobs, event log, and role runs before retrying or replacing this session.",
+            "action_label": "Open diagnostics",
+            "href": f"{session_url}#stage-run",
+            "kind": "danger",
+        }
+    if report_ready or session.status == SessionState.REPORT_READY.value:
+        return {
+            "title": "Outputs are ready",
+            "detail": "The report is available and raw artifacts can be reviewed or downloaded.",
+            "action_label": "Open report",
+            "href": f"{session_url}/report",
+            "kind": "success",
+        }
+    if session.status == SessionState.CAPTURING.value:
+        return {
+            "title": "Capture is live",
+            "detail": "Monitor host state and record operator annotations while the link is active.",
+            "action_label": "Open run controls",
+            "href": f"{session_url}#stage-run",
+            "kind": "live",
+        }
+    if not setup_ready:
+        return {
+            "title": "Assign both hosts",
+            "detail": "Choose TX and RX hosts before artifact work and run controls can progress.",
+            "action_label": "Open configure stage",
+            "href": f"{session_url}#stage-configure",
+            "kind": "pending",
+        }
+    if not artifacts_ready:
+        missing_roles = []
+        if not session.tx_artifact_id:
+            missing_roles.append("TX")
+        if not session.rx_artifact_id:
+            missing_roles.append("RX")
+        slots = " and ".join(missing_roles) if missing_roles else "required"
+        return {
+            "title": "Build or assign the remaining artifacts",
+            "detail": f"The {slots} slot still needs a ready artifact before the run can start.",
+            "action_label": "Open artifacts stage",
+            "href": f"{session_url}#stage-artifacts",
+            "kind": "pending",
+        }
+    return {
+        "title": "Start the session",
+        "detail": "Hosts and artifacts are assigned. Move to run controls and begin the capture.",
+        "action_label": "Open run controls",
+        "href": f"{session_url}#stage-run",
+        "kind": "primary",
+    }
+
+
+def _session_summary(
+    session: SessionModel,
+    *,
+    report: Report | None,
+    raw_artifact_count: int,
+    host_labels: dict[str, str],
+) -> dict[str, object]:
+    return {
+        "id": session.id,
+        "name": session.name,
+        "status": session.status,
+        "group": _session_group(session.status),
+        "created_at": session.created_at,
+        "updated_at": session.updated_at,
+        "started_at": session.started_at,
+        "ended_at": session.ended_at,
+        "location_text": session.location_text,
+        "tx_agent_id": session.tx_agent_id,
+        "rx_agent_id": session.rx_agent_id,
+        "tx_host_label": host_labels.get(session.tx_agent_id, "Unassigned") if session.tx_agent_id else "Unassigned",
+        "rx_host_label": host_labels.get(session.rx_agent_id, "Unassigned") if session.rx_agent_id else "Unassigned",
+        "has_report": bool(report and report.html_storage_path),
+        "report_status": report.status if report else session.report_status,
+        "raw_artifact_count": raw_artifact_count,
+        "next_action": _next_action_for_session(session, report),
+    }
+
+
+def _build_session_summaries(db: Session, host_labels: dict[str, str]) -> list[dict[str, object]]:
+    sessions = list_sessions(db)
+    reports_by_session, raw_counts = _report_and_raw_maps(db, [session.id for session in sessions])
+    return [
+        _session_summary(
+            session,
+            report=reports_by_session.get(session.id),
+            raw_artifact_count=raw_counts.get(session.id, 0),
+            host_labels=host_labels,
+        )
+        for session in sessions
+    ]
+
+
+def _grouped_sessions(session_summaries: list[dict[str, object]]) -> dict[str, list[dict[str, object]]]:
+    groups: dict[str, list[dict[str, object]]] = {
+        "active": [],
+        "needs_attention": [],
+        "completed": [],
+    }
+    for summary in session_summaries:
+        groups[str(summary["group"])].append(summary)
+    return groups
+
+
+def _build_hosts_context(db: Session) -> dict[str, object]:
+    settings = get_settings()
+    hosts = _list_hosts(db)
+    host_status = {host.id: visible_agent_status(host, settings) for host in hosts}
+    host_labels = {host.id: host.label or host.name for host in hosts}
+    session_summaries = _build_session_summaries(db, host_labels)
+    host_session_links: dict[str, dict[str, object]] = {}
+    host_sessions: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for summary in session_summaries:
+        for host_id in [summary.get("tx_agent_id"), summary.get("rx_agent_id")]:
+            if host_id:
+                host_sessions[str(host_id)].append(summary)
+    for host in hosts:
+        summaries = host_sessions.get(host.id, [])
+        active_summary = next((item for item in summaries if item["group"] == "active"), None)
+        if active_summary:
+            host_session_links[host.id] = active_summary
+        elif summaries:
+            host_session_links[host.id] = summaries[0]
+    last_updated_at = max(
+        [host.updated_at for host in hosts] + [summary["updated_at"] for summary in session_summaries if summary.get("updated_at")],
+        default=None,
+    )
+    return {
+        "hosts": hosts,
+        "host_status": host_status,
+        "host_labels": host_labels,
+        "host_session_links": host_session_links,
+        "sessions": session_summaries[:8],
+        "all_session_summaries": session_summaries,
+        "settings": settings,
+        "live_version": hosts_change_token(db),
+        "last_updated_at": last_updated_at,
+    }
+
+
+def _build_sessions_page_context(db: Session) -> dict[str, object]:
+    hosts = _list_hosts(db)
+    host_labels = {host.id: host.label or host.name for host in hosts}
+    session_summaries = _build_session_summaries(db, host_labels)
+    grouped = _grouped_sessions(session_summaries)
+    return {
+        "session_groups": grouped,
+        "session_count": len(session_summaries),
+        "active_count": len(grouped["active"]),
+        "needs_attention_count": len(grouped["needs_attention"]),
+        "completed_count": len(grouped["completed"]),
+    }
+
+
+def _build_session_detail_context(db: Session, session_id: str) -> tuple[SessionModel, dict[str, object]]:
+    session = get_session_or_404(db, session_id)
+    report = session_report(db, session.id)
+    github = _github()
+    hosts = _list_hosts(db)
+    host_labels = {host.id: host.label or host.name for host in hosts}
+    raw_items = raw_artifacts(db, session.id)
+    context = {
+        "session": session,
+        "hosts": hosts,
+        "host_labels": host_labels,
+        "artifacts": session_artifacts(db, session.id),
+        "roles": session_roles(db, session.id),
+        "annotations": annotations(db, session.id),
+        "events": session_events(db, session.id),
+        "jobs": session_jobs(db, session.id),
+        "raw_artifacts": raw_items,
+        "report": report,
+        "repos": github.list_repos(),
+        "live_version": session_change_token(db, session),
+        "next_action": _next_action_for_session(session, report),
+        "start_blockers": _start_blockers(session),
+        "last_updated_at": session.updated_at,
+        "raw_artifacts_page_url": f"/sessions/{session.id}/artifacts",
+        "report_json_url": f"/api/sessions/{session.id}/report/json",
+        "timeline_json_url": f"/api/sessions/{session.id}/timeline",
+    }
+    return session, context
+
+
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    sessions = list_sessions(db)
-    if sessions:
-        return RedirectResponse(url=f"/sessions/{sessions[0].id}", status_code=303)
-    return RedirectResponse(url="/hosts", status_code=303)
+    return RedirectResponse(url="/sessions", status_code=303)
 
 
 @router.get("/hosts", response_class=HTMLResponse)
 def hosts_overview(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    settings = get_settings()
-    hosts = db.query(AgentHost).order_by(AgentHost.name.asc()).all()
     return templates.TemplateResponse(
         name="hosts.html",
         request=request,
-        context={
-            "hosts": hosts,
-            "host_status": {host.id: visible_agent_status(host, settings) for host in hosts},
-            "sessions": list_sessions(db),
-            "settings": settings,
-            "live_version": hosts_change_token(db),
-        },
+        context=_build_hosts_context(db),
+    )
+
+
+@router.get("/hosts/fragment", response_class=HTMLResponse)
+def hosts_fragment(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    return templates.TemplateResponse(
+        name="hosts_fragment.html",
+        request=request,
+        context=_build_hosts_context(db),
+    )
+
+
+@router.get("/sessions", response_class=HTMLResponse)
+def sessions_index(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    return templates.TemplateResponse(
+        name="sessions.html",
+        request=request,
+        context=_build_sessions_page_context(db),
     )
 
 
@@ -175,27 +422,21 @@ def create_session_action(
 
 @router.get("/sessions/{session_id}", response_class=HTMLResponse)
 def session_detail(request: Request, session_id: str, db: Session = Depends(get_db)) -> HTMLResponse:
-    session = get_session_or_404(db, session_id)
-    report = session_report(db, session.id)
-    github = _github()
-    hosts = db.query(AgentHost).order_by(AgentHost.name.asc()).all()
+    _session, context = _build_session_detail_context(db, session_id)
     return templates.TemplateResponse(
         name="session_detail.html",
         request=request,
-        context={
-            "session": session,
-            "hosts": hosts,
-            "host_labels": {host.id: host.label or host.name for host in hosts},
-            "artifacts": session_artifacts(db, session.id),
-            "roles": session_roles(db, session.id),
-            "annotations": annotations(db, session.id),
-            "events": session_events(db, session.id),
-            "jobs": session_jobs(db, session.id),
-            "raw_artifacts": raw_artifacts(db, session.id),
-            "report": report,
-            "repos": github.list_repos(),
-            "live_version": session_change_token(db, session),
-        },
+        context=context,
+    )
+
+
+@router.get("/sessions/{session_id}/fragment", response_class=HTMLResponse)
+def session_detail_fragment(request: Request, session_id: str, db: Session = Depends(get_db)) -> HTMLResponse:
+    _session, context = _build_session_detail_context(db, session_id)
+    return templates.TemplateResponse(
+        name="session_detail_fragment.html",
+        request=request,
+        context=context,
     )
 
 
@@ -340,7 +581,12 @@ def report_page(request: Request, session_id: str, db: Session = Depends(get_db)
     return templates.TemplateResponse(
         name="report_page.html",
         request=request,
-        context={"session": session, "report_html": html},
+        context={
+            "session": session,
+            "report_html": html,
+            "report_json_url": f"/api/sessions/{session.id}/report/json",
+            "raw_artifacts_page_url": f"/sessions/{session.id}/artifacts",
+        },
     )
 
 

@@ -4,6 +4,14 @@
 {% macro num1(value) -%}
   {%- if value is defined and value is not none -%}{{ '%.1f' | format(value) }}{%- else -%}-{%- endif -%}
 {%- endmacro %}
+{% macro report_limit_note(items, href, label="full dataset") -%}
+  {% if items | length > report_table_limit %}
+  <p class="muted report-table-note">
+    Showing first {{ report_table_limit }} of {{ items | length }} rows.
+    Use <a href="{{ href }}">{{ label }}</a> for the complete data.
+  </p>
+  {% endif %}
+{%- endmacro %}
 {% set metrics = derived_metrics or {} %}
 {% set overview = metrics.link_overview or {} %}
 {% set bars = metrics.quality_bars or [] %}
@@ -35,10 +43,13 @@
 {% set c_primary = '#1f6feb' %}
 {% set c_secondary = '#2f9a66' %}
 {% set c_tertiary = '#d17d00' %}
+{% set report_table_limit = 200 %}
+{% set report_json_url = '/api/sessions/' ~ session.id ~ '/report/json' %}
+{% set timeline_json_url = '/api/sessions/' ~ session.id ~ '/timeline' %}
 
 <section class="report">
   <section class="report-screen">
-    <section class="panel report-engineer-header">
+    <section class="panel report-engineer-header" id="report-verdict" data-report-section data-report-title="RF Link Verdict">
       <div class="report-engineer-head">
         <div>
           <span class="report-headline">{{ overview.get("headline") or "Insufficient telemetry" }}</span>
@@ -83,24 +94,26 @@
       <div class="report-overview-strip report-overview-strip-engineer">
         <article class="overview-card">
           <span class="overview-label">TX -> RX Accepted</span>
-          <span class="overview-value">{{ pct(overview.get("delivery_ratio")) }}</span>
+          <span class="overview-value"><a href="#report-loss-hotspots">{{ pct(overview.get("delivery_ratio")) }}</a></span>
         </article>
         <article class="overview-card">
           <span class="overview-label">TX -> RX Seen</span>
-          <span class="overview-value">{{ pct(overview.get("visibility_ratio")) }}</span>
+          <span class="overview-value"><a href="#report-loss-hotspots">{{ pct(overview.get("visibility_ratio")) }}</a></span>
         </article>
         <article class="overview-card">
           <span class="overview-label">RX Seen -> Accepted</span>
-          <span class="overview-value">{{ pct(overview.get("acceptance_ratio")) }}</span>
+          <span class="overview-value"><a href="#report-rssi-acceptance">{{ pct(overview.get("acceptance_ratio")) }}</a></span>
         </article>
         <article class="overview-card">
           <span class="overview-label">Accepted RSSI p50</span>
           <span class="overview-value">
+            <a href="#report-rssi-acceptance">
             {% if overview.get("accepted_rssi_p50_dbm") is not none %}
               {{ '%.1f dBm' | format(overview.get("accepted_rssi_p50_dbm")) }}
             {% else %}
               -
             {% endif %}
+            </a>
           </span>
         </article>
       </div>
@@ -109,7 +122,7 @@
         {% for item in bars %}
         <div>
           <div class="report-engineer-head">
-            <strong>{{ item.label }}</strong>
+            <strong><a href="#report-evidence">{{ item.label }}</a></strong>
             <span>{{ item.value_text }}</span>
           </div>
           <div class="report-health-track">
@@ -123,7 +136,7 @@
       </div>
     </section>
 
-    <section class="report-role-scorecards">
+    <section class="report-role-scorecards" id="report-scorecards" data-report-section data-report-title="TX and RX Scorecards">
       <section class="panel report-role-scorecard report-role-scorecard-tx">
         <div class="panel-head">
           <h3>TX Pressure</h3>
@@ -241,7 +254,7 @@
       </section>
     </section>
 
-    <section class="report-primary-grid">
+    <section class="report-primary-grid" id="report-radio-snapshot" data-report-section data-report-title="Radio Snapshot">
       <section class="panel">
         <div class="panel-head">
           <h3>Radio and Threshold Snapshot</h3>
@@ -353,7 +366,7 @@
       </section>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="report-packet-types" data-report-section data-report-title="Packet Type Breakdown">
       <div class="panel-head">
         <h3>Packet Type Breakdown</h3>
       </div>
@@ -394,7 +407,7 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="report-loss-hotspots" data-report-section data-report-title="Loss Hotspots Over Time">
       <div class="panel-head">
         <h3>Loss Hotspots Over Time</h3>
       </div>
@@ -422,8 +435,8 @@
           <text x="{{ chart_pad_l }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="start">{{ temporal[0].start_ms }} ms</text>
           <text x="{{ chart_pad_l + (temporal_mid * temporal_step) }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="middle">{{ temporal[temporal_mid].start_ms }} ms</text>
           <text x="{{ chart_w - chart_pad_r }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ temporal[-1].end_ms }} ms</text>
-          <polyline points="{% for item in temporal %}{% set x = chart_pad_l + loop.index0 * temporal_step %}{% set y = chart_h - chart_pad_b - (((item.delivery_ratio if item.delivery_ratio is not none else 0) * temporal_inner_h)) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_primary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-          <polyline points="{% for item in temporal %}{% set x = chart_pad_l + loop.index0 * temporal_step %}{% set y = chart_h - chart_pad_b - (((item.visibility_ratio if item.visibility_ratio is not none else 0) * temporal_inner_h)) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_secondary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+          <polyline points="{% for item in temporal %}{% set x = chart_pad_l + loop.index0 * temporal_step %}{% set y = chart_h - chart_pad_b - (clamp01(item.delivery_ratio) * temporal_inner_h) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_primary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+          <polyline points="{% for item in temporal %}{% set x = chart_pad_l + loop.index0 * temporal_step %}{% set y = chart_h - chart_pad_b - (clamp01(item.visibility_ratio) * temporal_inner_h) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_secondary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </div>
       {% endif %}
@@ -461,8 +474,9 @@
         </table>
       </div>
 
-      <details class="report-expand">
+      <details class="report-expand" id="report-time-bins" data-report-section data-report-title="Full Time-Bin Table">
         <summary>Full time-bin table</summary>
+        {{ report_limit_note(temporal, report_json_url, "report JSON") }}
         <div class="table-shell">
           <table>
             <thead>
@@ -479,7 +493,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for item in temporal %}
+              {% for item in temporal[:report_table_limit] %}
               <tr>
                 <td>[{{ item.start_ms }}, {{ item.end_ms }})</td>
                 <td>{{ item.tx_packets }}</td>
@@ -500,7 +514,7 @@
       </details>
     </section>
 
-    <section class="report-role-deep-dive panel">
+    <section class="report-role-deep-dive panel" id="report-evidence" data-report-section data-report-title="Evidence and Diagnostics">
       <div class="report-role-deep-dive-head">
         <h3>Evidence and Diagnostics</h3>
         <p class="muted">
@@ -508,7 +522,7 @@
         </p>
       </div>
 
-      <details class="report-expand">
+      <details class="report-expand" id="report-rssi-acceptance" data-report-section data-report-title="Acceptance vs RSSI and Drop Reasons">
         <summary>Acceptance vs RSSI and drop reasons</summary>
         {% if relationship %}
         {% set rel_max_packets = relationship | map(attribute='total_packets') | max %}
@@ -521,7 +535,7 @@
             <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
             <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
             {% for item in relationship %}
-            {% set bar_h = (item.acceptance_ratio * inner_h) %}
+            {% set bar_h = (clamp01(item.acceptance_ratio) * inner_h) %}
             {% set bar_x = chart_pad_l + loop.index0 * slot_w + (slot_w * 0.15) %}
             {% set bar_y = chart_h - chart_pad_b - bar_h %}
             {% set bar_w = slot_w * 0.7 %}
@@ -583,7 +597,7 @@
         </div>
       </details>
 
-      <details class="report-expand">
+      <details class="report-expand" id="report-tx-timing" data-report-section data-report-title="TX Timing and Throughput">
         <summary>TX timing and throughput</summary>
         <div class="report-primary-grid">
           <section class="panel">
@@ -638,6 +652,7 @@
             <div class="panel-head">
               <h3>Rolling Delivery</h3>
             </div>
+            {{ report_limit_note(rolling, report_json_url, "report JSON") }}
             <div class="table-shell">
               <table>
                 <thead>
@@ -651,7 +666,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {% for item in rolling %}
+                  {% for item in rolling[:report_table_limit] %}
                   <tr>
                     <td>{{ item.t_ms }}</td>
                     <td>{{ item.window_bins }}</td>
@@ -689,12 +704,14 @@
             <text x="{{ chart_pad_l }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="start">{{ throughput[0].start_ms }} ms</text>
             <text x="{{ chart_pad_l + (tp_mid * tp_step) }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="middle">{{ throughput[tp_mid].start_ms }} ms</text>
             <text x="{{ chart_w - chart_pad_r }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ throughput[-1].end_ms }} ms</text>
-            <polyline points="{% for item in throughput %}{% set x = chart_pad_l + loop.index0 * tp_step %}{% set y = chart_h - chart_pad_b - ((((item.offered_bits_per_sec / throughput_max) if throughput_max > 0 else 0) * tp_inner_h)) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_tertiary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-            <polyline points="{% for item in throughput %}{% set x = chart_pad_l + loop.index0 * tp_step %}{% set y = chart_h - chart_pad_b - ((((item.delivered_bits_per_sec / throughput_max) if throughput_max > 0 else 0) * tp_inner_h)) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_primary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            <polyline points="{% for item in throughput %}{% set x = chart_pad_l + loop.index0 * tp_step %}{% set y = chart_h - chart_pad_b - (clamp01((item.offered_bits_per_sec / throughput_max) if throughput_max > 0 else 0) * tp_inner_h) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_tertiary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            <polyline points="{% for item in throughput %}{% set x = chart_pad_l + loop.index0 * tp_step %}{% set y = chart_h - chart_pad_b - (clamp01((item.delivered_bits_per_sec / throughput_max) if throughput_max > 0 else 0) * tp_inner_h) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_primary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </div>
         {% endif %}
 
+        {{ report_limit_note(throughput, report_json_url, "report JSON") }}
+        {{ report_limit_note(inter_arrival_points, timeline_json_url, "timeline JSON") }}
         <div class="table-shell">
           <table>
             <thead>
@@ -709,7 +726,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for item in throughput %}
+              {% for item in throughput[:report_table_limit] %}
               <tr>
                 <td>[{{ item.start_ms }}, {{ item.end_ms }})</td>
                 <td>{{ item.tx_packets }}</td>
@@ -727,13 +744,14 @@
         </div>
       </details>
 
-      <details class="report-expand">
+      <details class="report-expand" id="report-cadence" data-report-section data-report-title="Cadence, Channel Events, and RSSI Distribution">
         <summary>Cadence, channel events, and RSSI distribution</summary>
         <div class="report-primary-grid">
           <section class="panel">
             <div class="panel-head">
               <h3>Channel Events</h3>
             </div>
+            {{ report_limit_note(channel_events, timeline_json_url, "timeline JSON") }}
             <div class="table-shell">
               <table>
                 <thead>
@@ -748,7 +766,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {% for item in channel_events %}
+                  {% for item in channel_events[:report_table_limit] %}
                   <tr>
                     <td>{{ item.t_ms }}</td>
                     <td>{{ item.role }}</td>
@@ -824,7 +842,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for item in inter_arrival_points %}
+              {% for item in inter_arrival_points[:report_table_limit] %}
               <tr>
                 <td>{{ item.t_ms }}</td>
                 <td>{{ item.delta_ms }}</td>

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import re
 import struct
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from server.app.models.entities import Annotation, Artifact, RawArtifact, Session as SessionModel, SessionRoleRun
+from server.app.presentation import register_template_helpers
 from server.app.services.parsing import flatten_machine_timeline, merge_session_logs
 from server.app.services.reporting import generate_report
 from shared.enums import RawArtifactType, ReportStatus, Role
@@ -132,6 +136,156 @@ def test_generate_report_fails_when_no_machine_artifacts_exist(db_session, tmp_p
     assert "No RX packet RSSI/LQI samples available." in html
 
 
+def test_report_fragment_clamps_svg_coordinates_and_caps_large_tables() -> None:
+    temporal = [
+        {
+            "start_ms": index * 10,
+            "end_ms": index * 10 + 9,
+            "tx_packets": 10,
+            "rx_seen_packets": 8,
+            "rx_accepted_packets": 7,
+            "delivery_ratio": 1.4 if index % 2 == 0 else -0.3,
+            "visibility_ratio": 1.2 if index % 3 == 0 else -0.2,
+            "acceptance_ratio": 1.6 if index % 5 == 0 else -0.1,
+            "avg_rssi_dbm": -55.0,
+            "avg_lqi": 110.0,
+        }
+        for index in range(205)
+    ]
+    rolling = [
+        {
+            "t_ms": index * 10,
+            "window_bins": 5,
+            "tx_packets": 10,
+            "rx_accepted_packets": 7,
+            "delivery_ratio": 1.2 if index % 2 == 0 else -0.2,
+            "loss_ratio": 1.1 if index % 3 == 0 else -0.1,
+        }
+        for index in range(205)
+    ]
+    throughput = [
+        {
+            "start_ms": index * 10,
+            "end_ms": index * 10 + 9,
+            "tx_packets": 10,
+            "tx_bytes": 240,
+            "offered_bits_per_sec": -120.0 if index == 0 else 1200.0 + index,
+            "rx_accepted_packets": 7,
+            "rx_accepted_bytes": 168,
+            "delivered_bits_per_sec": -80.0 if index == 1 else 900.0 + index,
+        }
+        for index in range(205)
+    ]
+    relationship = [
+        {
+            "rssi_start_dbm": -80 + index,
+            "rssi_end_dbm": -79 + index,
+            "total_packets": 20,
+            "accepted_packets": 10,
+            "acceptance_ratio": 1.3 if index == 0 else -0.25,
+            "rejection_ratio": 0.5,
+            "avg_lqi": 100.0,
+        }
+        for index in range(2)
+    ]
+    channel_events = [
+        {
+            "t_ms": index * 10,
+            "role": "TX" if index % 2 == 0 else "RX",
+            "event_id": "channel_state",
+            "state": "active",
+            "reason": "none",
+            "active_freq_hz": 433_200_000,
+            "backup_freq_hz": 434_600_000,
+        }
+        for index in range(205)
+    ]
+    inter_arrival_points = [{"t_ms": index * 10, "delta_ms": 10 + index} for index in range(205)]
+
+    rendered = _render_report_fragment(
+        derived_metrics={
+            "link_overview": {
+                "headline": "Operator-safe rendering",
+                "reason": "Synthetic outlier coverage for charts and raw-data caps.",
+                "tx_packets": 2050,
+                "rx_seen_packets": 1640,
+                "rx_accepted_packets": 1435,
+                "session_span_ms": 2050,
+                "delivery_ratio": 1.4,
+                "visibility_ratio": -0.2,
+                "acceptance_ratio": 1.3,
+                "accepted_rssi_p50_dbm": -54.0,
+            },
+            "quality_bars": [
+                {
+                    "label": "Delivery confidence",
+                    "value_text": "Clamped",
+                    "percent": 82.0,
+                    "detail": "Outlier values should stay inside bounds.",
+                    "tone": "good",
+                }
+            ],
+            "channel_snapshot": {
+                "rf_bitrate_bps": 4800,
+                "rx_thresh_enable": True,
+                "active_freq_hz": 433_200_000,
+                "backup_freq_hz": 434_600_000,
+                "machine_log_stat_period_ms": 5000,
+                "rx_min_rssi_dbm": -92,
+                "rx_min_lqi": 8,
+                "rx_poll_interval_ms": 110,
+                "rx_host_bridge_budget_count": 25,
+                "tx_complete_timeout_ms": 200,
+            },
+            "signal_summary": {},
+            "tx_health": {"completed_count": 2050},
+            "rx_health": {"filtered_total_count": 0},
+            "tx_timing_summary": {},
+            "packet_type_breakdown": [],
+            "drop_reason_breakdown": [{"drop_reason": "lqi", "count": 3, "share": 1.0}],
+            "link_time_bins": temporal,
+            "worst_link_bins": [temporal[0]],
+            "pdr_per_relationship_by_rssi": relationship,
+            "rolling_reliability_by_time": rolling,
+            "inter_arrival_points": inter_arrival_points,
+            "inter_arrival_histogram": [{"delta_start_ms": 0, "delta_end_ms": 10, "count": 5}],
+            "rssi_distribution": [],
+            "throughput_by_time": throughput,
+            "channel_events": channel_events,
+        }
+    )
+
+    assert rendered.count("Showing first 200 of 205 rows.") >= 4
+    assert "[1990, 1999)" in rendered
+    assert "[2000, 2009)" not in rendered
+    assert "/api/sessions/demo-session/report/json" in rendered
+    assert "/api/sessions/demo-session/timeline" in rendered
+
+    polyline_points = re.findall(r'<polyline points="([^"]+)"', rendered)
+    assert polyline_points
+    for polyline in polyline_points:
+        for point in polyline.split():
+            x_text, y_text = point.split(",")
+            x = float(x_text)
+            y = float(y_text)
+            assert 0.0 <= x <= 760.0
+            assert 0.0 <= y <= 220.0
+
+    rects = re.findall(r'<rect x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)"', rendered)
+    assert rects
+    for x_text, y_text, width_text, height_text in rects:
+        x = float(x_text)
+        y = float(y_text)
+        width = float(width_text)
+        height = float(height_text)
+        assert 0.0 <= x <= 760.0
+        assert 0.0 <= y <= 220.0
+        assert width >= 0.0
+        assert height >= 0.0
+        assert x + width <= 760.01
+        assert y + height <= 220.01
+
+
 def test_merge_session_logs_overrides_human_log_fields_when_build_policy_disables_them(db_session, tmp_path: Path) -> None:
     session = _create_session(db_session)
     _register_machine_artifact(db_session, tmp_path, session.id, Role.TX, _tx_machine_stream())
@@ -182,6 +336,24 @@ def _create_session(db_session) -> SessionModel:
     db_session.add(session)
     db_session.commit()
     return session
+
+
+def _render_report_fragment(*, derived_metrics: dict) -> str:
+    template_dir = Path(__file__).resolve().parent.parent / "server" / "app" / "templates"
+    environment = Environment(
+        loader=FileSystemLoader(str(template_dir)),
+        autoescape=select_autoescape(["html", "xml"]),
+    )
+    register_template_helpers(environment)
+    return environment.get_template("report_fragment.html").render(
+        {
+            "session": SimpleNamespace(id="demo-session"),
+            "derived_metrics": derived_metrics,
+            "raw_artifacts": [],
+            "events": [],
+            "host_labels": {},
+        }
+    )
 
 
 def _register_machine_artifact(

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Sessions{% endblock %}
+{% block content %}
+<section class="sessions-page">
+  <section class="hero sessions-hero">
+    <div class="sessions-hero-main">
+      <p class="eyebrow">Operations</p>
+      <h2>Sessions</h2>
+      <p class="muted">The operator home for active runs, failures, and completed reports.</p>
+    </div>
+    <div class="hero-status">
+      <a class="button" href="/sessions/new">Create Session</a>
+      <a class="button secondary" href="/hosts">View Hosts</a>
+    </div>
+  </section>
+
+  <section class="overview-strip sessions-overview-strip">
+    <article class="overview-card">
+      <span class="overview-label">All Sessions</span>
+      <span class="overview-value">{{ session_count }}</span>
+      <span class="overview-meta">operator-visible workflows</span>
+    </article>
+    <article class="overview-card">
+      <span class="overview-label">Active</span>
+      <span class="overview-value">{{ active_count }}</span>
+      <span class="overview-meta">in progress</span>
+    </article>
+    <article class="overview-card">
+      <span class="overview-label">Needs Attention</span>
+      <span class="overview-value">{{ needs_attention_count }}</span>
+      <span class="overview-meta">failed or cancelled</span>
+    </article>
+    <article class="overview-card">
+      <span class="overview-label">Completed</span>
+      <span class="overview-value">{{ completed_count }}</span>
+      <span class="overview-meta">report ready</span>
+    </article>
+  </section>
+
+  <section class="panel sessions-toolbar-panel">
+    <div class="sessions-toolbar">
+      <label class="sessions-search">
+        <span>Search</span>
+        <input type="search" id="sessions-search" placeholder="Search name, status, location, or host" />
+      </label>
+      <div class="sessions-filter-group" role="group" aria-label="Session filters">
+        <button type="button" class="secondary active" data-session-filter="all">All</button>
+        <button type="button" class="secondary" data-session-filter="active">Active</button>
+        <button type="button" class="secondary" data-session-filter="needs_attention">Needs Attention</button>
+        <button type="button" class="secondary" data-session-filter="completed">Completed</button>
+      </div>
+    </div>
+  </section>
+
+  {% for group_key, label in [("active", "Active"), ("needs_attention", "Needs Attention"), ("completed", "Completed")] %}
+  {% set items = session_groups[group_key] %}
+  <section class="panel session-group-panel" data-session-group="{{ group_key }}">
+    <div class="panel-head">
+      <div>
+        <h3>{{ label }}</h3>
+        <p class="muted">{{ items | length }} session{{ "" if items | length == 1 else "s" }}</p>
+      </div>
+    </div>
+    <div class="session-card-list">
+      {% for session in items %}
+      <article
+        class="session-card"
+        data-session-card
+        data-session-group="{{ session.group }}"
+        data-session-search="{{ (session.name ~ ' ' ~ session.status ~ ' ' ~ (session.location_text or '') ~ ' ' ~ session.tx_host_label ~ ' ' ~ session.rx_host_label) | lower }}"
+      >
+        <div class="session-card-main">
+          <div class="session-card-head">
+            <div>
+              <h4><a href="/sessions/{{ session.id }}">{{ session.name }}</a></h4>
+              <p class="muted">{{ session.location_text or "No location set" }}</p>
+            </div>
+            <span class="chip chip-{{ session.status }}">{{ session.status | humanize_token }}</span>
+          </div>
+          <div class="session-card-meta">
+            <span><strong>TX</strong> {{ session.tx_host_label }}</span>
+            <span><strong>RX</strong> {{ session.rx_host_label }}</span>
+            <span><strong>Created</strong> {{ session.created_at | human_relative_time }}</span>
+            <span><strong>Updated</strong> {{ session.updated_at | human_relative_time }}</span>
+          </div>
+          <p class="session-card-next">
+            <strong>Next action:</strong>
+            <a href="{{ session.next_action.href }}">{{ session.next_action.action_label }}</a>
+            <span class="muted">{{ session.next_action.detail }}</span>
+          </p>
+        </div>
+        <div class="session-card-actions">
+          <a class="button secondary" href="/sessions/{{ session.id }}">Open Session</a>
+          {% if session.has_report %}
+          <a class="button secondary" href="/sessions/{{ session.id }}/report">Open Report</a>
+          {% endif %}
+          {% if session.raw_artifact_count %}
+          <a class="button secondary" href="/sessions/{{ session.id }}/artifacts">Open Raw Artifacts</a>
+          {% endif %}
+        </div>
+      </article>
+      {% else %}
+      <p class="muted session-group-empty">No sessions in this group.</p>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</section>
+<script>
+(() => {
+  const page = document.querySelector(".sessions-page");
+  if (!(page instanceof HTMLElement)) {
+    return;
+  }
+  const searchInput = page.querySelector("#sessions-search");
+  const filterButtons = Array.from(page.querySelectorAll("[data-session-filter]"));
+  const cards = Array.from(page.querySelectorAll("[data-session-card]"));
+  const groups = Array.from(page.querySelectorAll("[data-session-group]"));
+  if (!(searchInput instanceof HTMLInputElement) || !cards.length) {
+    return;
+  }
+
+  let activeFilter = "all";
+  const applyFilters = () => {
+    const query = searchInput.value.trim().toLowerCase();
+    cards.forEach((card) => {
+      const matchesFilter = activeFilter === "all" || card.dataset.sessionGroup === activeFilter;
+      const haystack = card.dataset.sessionSearch || "";
+      const matchesSearch = !query || haystack.includes(query);
+      card.hidden = !(matchesFilter && matchesSearch);
+    });
+    groups.forEach((group) => {
+      const visibleCards = group.querySelectorAll("[data-session-card]:not([hidden])");
+      group.hidden = visibleCards.length === 0;
+    });
+  };
+
+  searchInput.addEventListener("input", applyFilters);
+  filterButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      activeFilter = button.dataset.sessionFilter || "all";
+      filterButtons.forEach((candidate) => candidate.classList.toggle("active", candidate === button));
+      applyFilters();
+    });
+  });
+})();
+</script>
+{% endblock %}

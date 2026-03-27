@@ -14,7 +14,7 @@ from agent.app.services.api_client import (
 from server.app.core.config import ServerSettings
 from server.app.db.session import get_db
 from server.app.main import create_app
-from server.app.models.entities import AgentHost, Artifact, Job, RawArtifact
+from server.app.models.entities import AgentHost, Artifact, Job, RawArtifact, Report, Session as SessionModel
 from server.app.services.storage import FileStorage
 from shared.schemas import BuildRecipe, ConfiguredRepo
 
@@ -174,6 +174,84 @@ def test_create_session_api(db_session) -> None:
     assert session_response.json()["name"] == "api-session"
 
 
+def test_home_redirects_to_sessions(db_session) -> None:
+    client = _client_with_db(db_session)
+
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/sessions"
+
+
+def test_sessions_page_groups_search_filters_and_quick_actions(db_session) -> None:
+    client = _client_with_db(db_session)
+
+    active_session = SessionModel(
+        name="Alpha Active",
+        status="capturing",
+        stop_mode="default_duration",
+        location_mode="manual",
+        location_text="ridge",
+    )
+    failed_session = SessionModel(
+        name="Bravo Failed",
+        status="failed",
+        stop_mode="default_duration",
+        location_mode="manual",
+        location_text="tree line",
+    )
+    completed_session = SessionModel(
+        name="Charlie Complete",
+        status="report_ready",
+        stop_mode="default_duration",
+        location_mode="manual",
+        location_text="valley",
+        report_status="ready",
+    )
+    db_session.add_all([active_session, failed_session, completed_session])
+    db_session.commit()
+
+    db_session.add(
+        Report(
+            session_id=completed_session.id,
+            status="ready",
+            html_storage_path=f"reports/{completed_session.id}/report.html",
+            diagnostics_json={"status": "ready"},
+        )
+    )
+    db_session.add(
+        RawArtifact(
+            session_id=completed_session.id,
+            role=None,
+            type="parser_output",
+            storage_path=f"raw/{completed_session.id}/parser_output.json",
+            hash_sha256="hash",
+            size_bytes=42,
+            metadata_json={"generated": True},
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/sessions")
+
+    assert response.status_code == 200
+    assert "The operator home for active runs, failures, and completed reports." in response.text
+    assert 'href="/sessions"' in response.text
+    assert 'id="sessions-search"' in response.text
+    assert 'data-session-filter="active"' in response.text
+    assert 'data-session-filter="needs_attention"' in response.text
+    assert 'data-session-filter="completed"' in response.text
+    assert 'data-session-group="active"' in response.text
+    assert 'data-session-group="needs_attention"' in response.text
+    assert 'data-session-group="completed"' in response.text
+    assert "Alpha Active" in response.text
+    assert "Bravo Failed" in response.text
+    assert "Charlie Complete" in response.text
+    assert "Open Session" in response.text
+    assert f'href="/sessions/{completed_session.id}/report"' in response.text
+    assert f'href="/sessions/{completed_session.id}/artifacts"' in response.text
+
+
 def test_hosts_page_after_agent_register(db_session) -> None:
     app = create_app()
 
@@ -206,6 +284,37 @@ def test_hosts_page_after_agent_register(db_session) -> None:
     assert "Build" in hosts_page.text
     assert "build_capable" not in hosts_page.text
     assert 'data-copy-label="public url"' in hosts_page.text
+
+
+def test_hosts_fragment_returns_refreshable_shell_and_markers(db_session) -> None:
+    client = _client_with_db(db_session)
+
+    register_response = client.post(
+        "/api/agent/register",
+        json={
+            "name": "agent-fragment",
+            "label": "Fragment Agent",
+            "hostname": "fragment-host",
+            "capabilities": {
+                "build_capable": True,
+                "flash_capable": True,
+                "capture_capable": True,
+            },
+            "ip_address": "127.0.0.1",
+            "connected_probe_count": 2,
+            "location_text": "bench",
+            "software_version": "0.1.0",
+        },
+    )
+    assert register_response.status_code == 200
+
+    fragment = client.get("/hosts/fragment")
+
+    assert fragment.status_code == 200
+    assert 'id="hosts-live-shell"' in fragment.text
+    assert "data-live-shell" in fragment.text
+    assert "data-live-updated-at" in fragment.text
+    assert "Recent Sessions" in fragment.text
 
 
 def test_start_session_uses_public_base_url_for_agent_downloads(db_session, monkeypatch) -> None:
@@ -596,6 +705,100 @@ def test_session_detail_page_marks_run_stage_active_once_setup_and_artifacts_are
     assert f'data-active-stage-storage-key="session-active-stage:{session_id}"' in page.text
 
 
+def test_session_fragment_returns_refreshable_shell_and_markers(db_session) -> None:
+    client = _client_with_db(db_session)
+
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "fragment-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+
+    fragment = client.get(f"/sessions/{session_id}/fragment")
+
+    assert fragment.status_code == 200
+    assert 'id="session-live-shell"' in fragment.text
+    assert "data-live-shell" in fragment.text
+    assert "data-live-updated-at" in fragment.text
+    assert "Next Required Action" in fragment.text
+    assert "Assign both hosts" in fragment.text
+
+
+def test_session_detail_next_action_card_covers_major_state_transitions(db_session) -> None:
+    client = _client_with_db(db_session)
+
+    tx_host = AgentHost(name="tx-next", label="TX Next", hostname="tx.next", status="idle")
+    rx_host = AgentHost(name="rx-next", label="RX Next", hostname="rx.next", status="idle")
+    db_session.add_all([tx_host, rx_host])
+    db_session.commit()
+
+    needs_hosts = SessionModel(name="needs-hosts", status="selecting_artifacts", stop_mode="default_duration")
+    needs_artifacts = SessionModel(
+        name="needs-artifacts",
+        status="selecting_artifacts",
+        stop_mode="default_duration",
+        tx_agent_id=tx_host.id,
+        rx_agent_id=rx_host.id,
+    )
+    ready_to_start = SessionModel(
+        name="ready-to-start",
+        status="awaiting_hosts",
+        stop_mode="default_duration",
+        tx_agent_id=tx_host.id,
+        rx_agent_id=rx_host.id,
+        tx_artifact_id="tx-artifact",
+        rx_artifact_id="rx-artifact",
+    )
+    capturing = SessionModel(
+        name="capturing-session",
+        status="capturing",
+        stop_mode="default_duration",
+        tx_agent_id=tx_host.id,
+        rx_agent_id=rx_host.id,
+        tx_artifact_id="tx-artifact",
+        rx_artifact_id="rx-artifact",
+    )
+    outputs_ready = SessionModel(
+        name="outputs-ready",
+        status="report_ready",
+        stop_mode="default_duration",
+        tx_agent_id=tx_host.id,
+        rx_agent_id=rx_host.id,
+        tx_artifact_id="tx-artifact",
+        rx_artifact_id="rx-artifact",
+        report_status="ready",
+    )
+    db_session.add_all([needs_hosts, needs_artifacts, ready_to_start, capturing, outputs_ready])
+    db_session.commit()
+
+    db_session.add(
+        Report(
+            session_id=outputs_ready.id,
+            status="ready",
+            html_storage_path=f"reports/{outputs_ready.id}/report.html",
+            diagnostics_json={"status": "ready"},
+        )
+    )
+    db_session.commit()
+
+    needs_hosts_fragment = client.get(f"/sessions/{needs_hosts.id}/fragment")
+    needs_artifacts_fragment = client.get(f"/sessions/{needs_artifacts.id}/fragment")
+    ready_fragment = client.get(f"/sessions/{ready_to_start.id}/fragment")
+    capturing_fragment = client.get(f"/sessions/{capturing.id}/fragment")
+    outputs_ready_fragment = client.get(f"/sessions/{outputs_ready.id}/fragment")
+
+    assert "Assign both hosts" in needs_hosts_fragment.text
+    assert "Build or assign the remaining artifacts" in needs_artifacts_fragment.text
+    assert "Start the session" in ready_fragment.text
+    assert "Capture is live" in capturing_fragment.text
+    assert "Outputs are ready" in outputs_ready_fragment.text
+    assert "Open Raw Artifacts" in outputs_ready_fragment.text
+
+
 def test_session_live_endpoint_version_changes_when_session_data_changes(db_session) -> None:
     app = create_app()
 
@@ -766,6 +969,44 @@ def test_report_page_renders_summaries_without_raw_payload_dumps(db_session) -> 
     assert "Loss Hotspots Over Time" in report_page.text
     assert "payload_json" not in report_page.text
     assert 'data-copy-label="session id"' in report_page.text
+
+
+def test_report_page_includes_toc_controls_links_and_section_anchors(
+    db_session, monkeypatch, tmp_path
+) -> None:
+    settings = ServerSettings(
+        data_dir=tmp_path / "server_data",
+        repo_config_path=tmp_path / "server_data" / "repos.json",
+    )
+    client = _client_with_db_and_settings(db_session, monkeypatch, settings)
+
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "report-controls-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+
+    generate_response = client.post(f"/sessions/{session_id}/report/generate", follow_redirects=False)
+    assert generate_response.status_code == 303
+
+    report_page = client.get(f"/sessions/{session_id}/report")
+
+    assert report_page.status_code == 200
+    assert 'id="report-toc"' in report_page.text
+    assert 'id="report-collapse-evidence"' in report_page.text
+    assert 'id="report-expand-summary"' in report_page.text
+    assert f'href="/api/sessions/{session_id}/report/json"' in report_page.text
+    assert f'href="/sessions/{session_id}/artifacts"' in report_page.text
+    assert f'href="/sessions/{session_id}"' in report_page.text
+    assert 'id="report-verdict"' in report_page.text
+    assert 'id="report-loss-hotspots"' in report_page.text
+    assert 'id="report-evidence"' in report_page.text
+    assert "Collapse All Evidence" in report_page.text
+    assert "Jump to Summary" in report_page.text
 
 
 def test_storage_rejects_escape_paths(tmp_path) -> None:
