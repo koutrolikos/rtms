@@ -1,5 +1,17 @@
 {% from "_summary.html" import render_copy_value, render_summary %}
 {% set setup_ready = session.tx_host_id and session.rx_host_id %}
+{% set build_slots = namespace(tx=false, rx=false) %}
+{% for artifact in artifacts %}
+  {% if artifact.status != "failed" %}
+    {% if "TX" in (artifact.role_compatibility or []) %}
+      {% set build_slots.tx = true %}
+    {% endif %}
+    {% if "RX" in (artifact.role_compatibility or []) %}
+      {% set build_slots.rx = true %}
+    {% endif %}
+  {% endif %}
+{% endfor %}
+{% set build_ready = build_slots.tx and build_slots.rx %}
 {% set artifacts_ready = session.tx_artifact_id and session.rx_artifact_id %}
 {% set can_start = setup_ready and artifacts_ready %}
 {% set run_active = session.status in ["preparing_roles", "ready_to_capture", "capturing", "merging", "report_ready", "failed", "cancelled"] %}
@@ -7,10 +19,10 @@
 {% set activity_drawer_open = session.status in ["capturing", "failed", "cancelled"] %}
 {% set stage = namespace(current=1, active_id="stage-configure") %}
 {% if setup_ready %}
-  {% if report_ready or session.status == "report_ready" %}
+  {% if report_ready or session.status in ["merging", "report_ready", "failed", "cancelled"] %}
     {% set stage.current = 4 %}
     {% set stage.active_id = "stage-outputs" %}
-  {% elif not artifacts_ready or session.status in ["draft", "selecting_artifacts", "building_artifacts"] %}
+  {% elif not build_ready %}
     {% set stage.current = 2 %}
     {% set stage.active_id = "stage-artifacts" %}
   {% else %}
@@ -20,7 +32,6 @@
 {% endif %}
 <div id="session-live-shell" class="session-live-shell" data-live-shell>
   {% include "partials/session_detail/_hero.html" %}
-  {% include "partials/session_detail/_pipeline_nav.html" %}
 
   <section class="session-layout">
     <div class="pipeline-main">

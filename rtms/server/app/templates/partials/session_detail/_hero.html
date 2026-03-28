@@ -18,26 +18,6 @@
             </div>
           </div>
           {% endif %}
-          {% if report and report.html_storage_path %}
-          <div class="session-hero-status-actions">
-            <a class="button secondary" href="/sessions/{{ session.id }}/report">View Report</a>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-      <div class="session-hero-next-action">
-        <div class="session-hero-next-action-copy">
-          <p class="eyebrow">Next Required Action</p>
-          <h3>{{ next_action.title }}</h3>
-          <p class="muted">{{ next_action.detail }}</p>
-        </div>
-        <div class="session-hero-next-action-actions">
-          <a class="button {% if next_action.kind == 'danger' %}danger{% elif next_action.kind in ['pending', 'success', 'live'] %}secondary{% endif %}" href="{{ next_action.href }}">
-            {{ next_action.action_label }}
-          </a>
-          {% if report_ready %}
-          <a class="button secondary" href="{{ raw_artifacts_page_url }}">Open Raw Artifacts</a>
-          {% endif %}
         </div>
       </div>
       <div class="hero-meta session-hero-meta">

@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Hosts{% endblock %}
+{% block title %}Dashboard{% endblock %}
 {% block content %}
 <section
   class="hosts-screen"
-  data-auto-refresh-url="/hosts/live"
-  data-auto-refresh-fragment-url="/hosts/fragment"
+  data-auto-refresh-url="/dashboard/live"
+  data-auto-refresh-fragment-url="/dashboard/fragment"
   data-auto-refresh-target-id="hosts-live-shell"
   data-auto-refresh-version="{{ live_version }}"
   data-auto-refresh-interval-ms="2500"

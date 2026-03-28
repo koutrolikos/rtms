@@ -133,16 +133,16 @@ pre {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.4rem;
-  padding: 1.35rem 2rem;
-  min-height: 5rem;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  min-height: 4.5rem;
   position: sticky;
   top: 0;
   z-index: 20;
-  border-bottom: 1px solid var(--line);
-  background: rgba(248, 248, 247, 0.86);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 8px 24px rgba(17, 24, 28, 0.04);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 84%, white 16%);
+  background: color-mix(in srgb, var(--bg) 82%, white 18%);
+  backdrop-filter: blur(20px) saturate(1.12);
+  box-shadow: 0 10px 28px rgba(17, 24, 28, 0.05);
 }
 
 .topbar-brand {
@@ -152,25 +152,25 @@ pre {
 
 .topbar-title {
   margin: 0;
-  font-size: clamp(2.15rem, 3vw, 2.95rem);
-  letter-spacing: 0.06em;
+  font-size: clamp(1.8rem, 2.4vw, 2.45rem);
+  letter-spacing: 0.04em;
   line-height: 1;
 }
 
 .topbar-title a {
   display: inline-flex;
   align-items: center;
-  padding: 0.08rem 0.45rem 0.08rem 0;
+  padding: 0.05rem 0.25rem 0.05rem 0;
   font-family: "Orbitron", "Geist", "IBM Plex Sans", sans-serif;
-  font-weight: 900;
+  font-weight: 860;
   color: var(--accent);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.08em;
   font-variant-ligatures: common-ligatures contextual;
   font-feature-settings: "liga" 1, "calt" 1;
   text-rendering: geometricPrecision;
-  -webkit-text-stroke: 0.7px rgba(0, 106, 220, 0.44);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.58), 0 4px 0 rgba(0, 106, 220, 0.14), 0 10px 22px rgba(0, 106, 220, 0.32);
+  -webkit-text-stroke: 0;
+  text-shadow: none;
 }
 
 .topbar-title a:hover {
@@ -178,14 +178,20 @@ pre {
 }
 
 html[data-theme="dark"] .topbar-title a {
-  -webkit-text-stroke: 0.72px rgba(102, 168, 255, 0.56);
-  text-shadow: 0 1px 0 rgba(6, 10, 14, 0.86), 0 5px 0 rgba(14, 27, 40, 0.6), 0 12px 24px rgba(102, 168, 255, 0.38);
+  -webkit-text-stroke: 0;
+  text-shadow: none;
 }
 
 .topbar-nav {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.35rem;
   flex-wrap: wrap;
+  align-items: center;
+  min-height: 2.3rem;
+  padding: 0.1rem 0.1rem 0.1rem 0.22rem;
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent 14%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 90%, var(--bg) 10%);
 }
 
 .topbar-actions {
@@ -196,42 +202,79 @@ html[data-theme="dark"] .topbar-title a {
   flex-wrap: wrap;
 }
 
+.topbar-link,
 .topbar-nav a {
   display: inline-flex;
   align-items: center;
-  min-height: 2.5rem;
-  padding: 0.55rem 0.95rem;
-  border-radius: 12px;
+  justify-content: center;
+  min-height: 2.3rem;
+  padding: 0.48rem 0.88rem;
+  border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--ink);
-  font-weight: 600;
+  font-weight: 620;
   box-shadow: none;
 }
 
+.topbar-link {
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent 14%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 90%, var(--bg) 10%);
+}
+
+.topbar-link:hover,
 .topbar-nav a:hover {
   transform: none;
-  border-color: var(--line);
-  background: rgba(17, 24, 28, 0.03);
+  border-color: transparent;
+  background: rgba(17, 24, 28, 0.045);
   box-shadow: none;
 }
 
+.topbar-link.active,
 .topbar-nav a.active {
-  border-color: rgba(0, 106, 220, 0.16);
-  background: rgba(0, 106, 220, 0.08);
+  border-color: rgba(0, 106, 220, 0.18);
+  background: rgba(0, 106, 220, 0.11);
   color: var(--accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+.topbar-add-link {
+  min-width: 2.3rem;
+  padding-inline: 0.64rem;
+  font-size: 1.18rem;
+  line-height: 1;
+  transform-origin: center;
+  transition:
+    transform 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.topbar-add-link:hover {
+  transform: scale(1.08);
 }
 
 html[data-theme="dark"] .topbar {
-  background: rgba(10, 14, 18, 0.82);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  background: rgba(11, 15, 19, 0.82);
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
 }
 
+html[data-theme="dark"] .topbar-link,
+html[data-theme="dark"] .topbar-nav {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] .topbar-link:hover,
 html[data-theme="dark"] .topbar-nav a:hover {
   border-color: rgba(255,255,255,0.08);
   background: rgba(255,255,255,0.05);
 }
 
+html[data-theme="dark"] .topbar-link.active,
 html[data-theme="dark"] .topbar-nav a.active {
   border-color: rgba(102, 168, 255, 0.2);
   background: rgba(102, 168, 255, 0.12);
@@ -240,11 +283,11 @@ html[data-theme="dark"] .topbar-nav a.active {
 .page {
   position: relative;
   z-index: 1;
-  width: min(1440px, calc(100% - 2rem));
+  width: min(1360px, calc(100% - 2.75rem));
   margin: 0 auto;
-  padding: 1.5rem 0 2rem;
+  padding: 1.35rem 0 2.25rem;
   display: grid;
-  gap: 1.4rem;
+  gap: 1.25rem;
 }
 
 .pipeline-nav {
@@ -595,3 +638,29 @@ html[data-theme="dark"] .topbar-nav a.active {
   font-weight: 560;
 }
 
+@media (max-width: 900px) {
+  .topbar {
+    align-items: start;
+    flex-wrap: wrap;
+    padding: 0.9rem 1rem;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .topbar-nav {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .topbar-link {
+    flex: 0 0 auto;
+  }
+
+  .page {
+    width: min(100%, calc(100% - 1rem));
+    padding-top: 1rem;
+  }
+}

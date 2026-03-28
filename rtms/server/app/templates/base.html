@@ -24,16 +24,24 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="/static/style.css?v=20260328a" />
+    <link rel="stylesheet" href="/static/style.css?v=20260328i" />
   </head>
   <body>
     <header class="topbar">
-      <h1 class="topbar-title"><a href="/hosts">RTMS</a></h1>
+      <h1 class="topbar-title"><a href="/dashboard">RTMS</a></h1>
       <div class="topbar-actions">
-        <nav class="topbar-nav">
-          <a href="/hosts" class="{% if request.url.path == '/hosts' or request.url.path == '/' %}active{% endif %}">Hosts</a>
+        <a
+          href="/dashboard"
+          class="topbar-link{% if request.url.path in ['/', '/dashboard', '/hosts'] %} active{% endif %}"
+        >Dashboard</a>
+        <nav class="topbar-nav topbar-nav-cluster">
           <a href="/sessions" class="{% if request.url.path == '/sessions' or (request.url.path.startswith('/sessions/') and request.url.path != '/sessions/new') %}active{% endif %}">Sessions</a>
-          <a href="/sessions/new" class="{% if request.url.path == '/sessions/new' %}active{% endif %}">New Session</a>
+          <a
+            href="/sessions/new"
+            class="topbar-add-link{% if request.url.path == '/sessions/new' %} active{% endif %}"
+            aria-label="New Session"
+            title="New Session"
+          >+</a>
         </nav>
         <button
           type="button"

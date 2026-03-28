@@ -1,23 +1,10 @@
-{% from "_summary.html" import render_copy_value, render_tags %}
-{% set summary = namespace(idle=0, busy=0, build=0) %}
-{% for host in hosts %}
-  {% if host_status[host.id] == "idle" %}
-    {% set summary.idle = summary.idle + 1 %}
-  {% endif %}
-  {% if host_status[host.id] == "busy" %}
-    {% set summary.busy = summary.busy + 1 %}
-  {% endif %}
-  {% if host.capabilities.build_capable %}
-    {% set summary.build = summary.build + 1 %}
-  {% endif %}
-{% endfor %}
 <div id="hosts-live-shell" class="hosts-live-shell" data-live-shell>
   <section class="hosts-header" data-refresh-flash>
     <div class="hosts-header-main">
       <div class="hosts-header-topline">
         <div class="hosts-header-heading">
-          <h1>Hosts</h1>
-          <p class="muted">Operator view of connected hosts, availability, and current session touchpoints.</p>
+          <h1>Dashboard</h1>
+          <p class="muted">Live view of fleet availability, session load, and report readiness.</p>
         </div>
         <div class="hosts-header-updated">
           <span class="hero-meta-label">Updated</span>
@@ -30,130 +17,112 @@
           </span>
         </div>
       </div>
-      <div class="hosts-header-meta">
-        <div class="hosts-header-cell">
-          <span class="hero-meta-label">Listen</span>
-          <span class="hosts-header-value">{{ settings.host }}:{{ settings.port }}</span>
-        </div>
-        <div class="hosts-header-cell hosts-header-cell-url">
-          <span class="hero-meta-label">Public URL</span>
-          {{ render_copy_value(settings.effective_public_base_url, settings.effective_public_base_url, "public url", true) }}
-        </div>
-      </div>
     </div>
   </section>
 
   <section class="overview-strip hosts-overview-strip" data-refresh-flash>
     <article class="overview-card">
-      <span class="overview-label">Hosts</span>
+      <span class="overview-label">Hosts Registered</span>
       <span class="overview-value">{{ hosts | length }}</span>
-      <span class="overview-meta">registered</span>
+      <span class="overview-meta">ever seen by RTMS</span>
     </article>
     <article class="overview-card">
-      <span class="overview-label">Build Hosts</span>
-      <span class="overview-value">{{ summary.build }}</span>
-      <span class="overview-meta">build capable</span>
-    </article>
-    <article class="overview-card">
-      <span class="overview-label">Idle</span>
-      <span class="overview-value">{{ summary.idle }}</span>
-      <span class="overview-meta">{{ summary.busy }} busy</span>
-    </article>
-    <article class="overview-card">
-      <span class="overview-label">Sessions</span>
+      <span class="overview-label">All Sessions</span>
       <span class="overview-value">{{ all_session_summaries | length }}</span>
-      <span class="overview-meta">tracked</span>
+      <span class="overview-meta">operator workflows</span>
+    </article>
+    <article class="overview-card">
+      <span class="overview-label">Report Ready Sessions</span>
+      <span class="overview-value">{{ completed_sessions_count }}</span>
+      <span class="overview-meta">successful outcomes</span>
+    </article>
+    <article class="overview-card">
+      <span class="overview-label">Online Hosts</span>
+      <span class="overview-value">{{ online_hosts | length }}</span>
+      <span class="overview-meta">currently reachable</span>
     </article>
   </section>
 
-  <section class="hosts-grid">
-    {% for host in hosts %}
-    {% set linked_session = host_session_links.get(host.id) %}
-    <article class="panel host-card" data-refresh-flash>
-      <div class="host-card-head">
-        <div class="host-card-title">
-          <h3>{{ host.label or host.name }}</h3>
-          {% if host.hostname and host.hostname != (host.label or host.name) %}
-          <p class="muted">{{ host.hostname }}</p>
-          {% endif %}
+  <section class="panel hosts-roster-panel" data-refresh-flash>
+    <div class="panel-head hosts-section-head">
+      <div>
+        <h2>Hosts</h2>
+        <p class="muted">Most recently seen machines first, with live hosts naturally rising to the top.</p>
+      </div>
+    </div>
+    <div class="hosts-grid hosts-roster-grid">
+      {% for host in ordered_hosts %}
+      {% set show_hostname = host.hostname and host.hostname != (host.label or host.name) %}
+      {% set is_online = host_status[host.id] != "offline" %}
+      {% set capabilities = summarize_capabilities(host.capabilities) %}
+      <article class="panel host-card host-card-simple">
+        <div class="host-card-head host-card-topline">
+          <div class="host-card-title">
+            <h3>{{ host.label or host.name }}</h3>
+            {% if show_hostname or host.software_version or capabilities %}
+            <p class="muted">
+              {% if show_hostname %}
+              {{ host.hostname }}
+              {% endif %}
+              {% if host.software_version %}
+              {% if show_hostname %} · {% endif %}{{ host.software_version }}
+              {% endif %}
+              {% if capabilities %}
+              {% if show_hostname or host.software_version %} · {% endif %}{{ capabilities | join(" · ") }}
+              {% endif %}
+            </p>
+            {% endif %}
+          </div>
+          <span class="host-last-seen{% if is_online %} is-online{% endif %}">
+            {{ host.last_seen_at | human_relative_time if host.last_seen_at else "never" }}
+          </span>
         </div>
-        <span class="chip chip-{{ host_status[host.id] }}">{{ host_status[host.id] }}</span>
-      </div>
-      <div class="host-card-statusline">
-        <span class="host-card-availability">
-          {% if host_status[host.id] == "busy" %}
-          Currently allocated to an active workflow
-          {% elif host_status[host.id] == "idle" %}
-          Available for assignment
-          {% else %}
-          Awaiting heartbeat
-          {% endif %}
-        </span>
-        {% if linked_session %}
-        <a class="host-card-session-link" href="/sessions/{{ linked_session.id }}">
-          {{ "Open active session" if linked_session.group == "active" else "Open recent session" }}
-        </a>
-        {% endif %}
-      </div>
-      <div class="host-capability-row">
-        {{ render_tags(summarize_capabilities(host.capabilities), "No capabilities") }}
-      </div>
-      <dl class="host-fact-grid">
-        <div><dt>Name</dt><dd>{{ host.name }}</dd></div>
-        <div><dt>Hostname</dt><dd>{{ host.hostname }}</dd></div>
-        <div><dt>IP</dt><dd>{{ host.ip_address or "n/a" }}</dd></div>
-        <div><dt>Probes</dt><dd>{{ host.connected_probe_count }}</dd></div>
-        <div><dt>Version</dt><dd>{{ host.software_version or "n/a" }}</dd></div>
-        <div><dt>Location</dt><dd>{{ host.last_reported_location or "n/a" }}</dd></div>
-        <div class="wide">
-          <dt>Last Seen</dt>
-          <dd>
-            {{ host.last_seen_at | human_relative_time }}
-            <span class="host-fact-subtle">{{ host.last_seen_at }}</span>
-          </dd>
+        <div class="host-inline-facts">
+          <span class="host-inline-fact"><strong>IP</strong><span>{{ host.ip_address or "n/a" }}</span></span>
+          <span class="host-inline-fact"><strong>Probes</strong><span>{{ host.connected_probe_count }}</span></span>
         </div>
-      </dl>
-    </article>
-    {% else %}
-    <article class="panel host-empty" data-refresh-flash>
-      <p class="muted">No hosts registered yet.</p>
-    </article>
-    {% endfor %}
+      </article>
+      {% else %}
+      <article class="panel host-empty">
+        <p class="muted">No hosts registered yet.</p>
+      </article>
+      {% endfor %}
+    </div>
   </section>
 
-  <section class="panel hosts-sessions-panel" data-refresh-flash>
-    <div class="panel-head">
+  <section class="panel hosts-recent-sessions-panel" data-refresh-flash>
+    <div class="panel-head hosts-section-head">
       <div>
         <h2>Recent Sessions</h2>
-        <p class="muted">Latest operator activity with direct access to the active workflow.</p>
+        <p class="muted">Latest workflows, with the report path surfaced when it exists.</p>
       </div>
       <a class="button secondary" href="/sessions">All Sessions</a>
     </div>
-    <div class="table-shell table-shell-stack">
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Hosts</th>
-            <th>Next Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for session in sessions %}
-          <tr>
-            <td data-cell-label="Name"><a href="/sessions/{{ session.id }}">{{ session.name }}</a></td>
-            <td data-cell-label="Status"><span class="chip chip-{{ session.status }}">{{ session.status | humanize_token }}</span></td>
-            <td data-cell-label="Hosts">{{ session.tx_host_label }} / {{ session.rx_host_label }}</td>
-            <td data-cell-label="Next Action"><a href="{{ session.next_action.href }}">{{ session.next_action.action_label }}</a></td>
-          </tr>
-          {% else %}
-          <tr>
-            <td colspan="4" class="muted">No sessions created yet.</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="hosts-session-list">
+      {% for session in recent_sessions %}
+      <article class="hosts-session-entry">
+        <div class="hosts-session-main">
+          <div class="hosts-session-head">
+            <h3><a href="/sessions/{{ session.id }}">{{ session.name }}</a></h3>
+            <span class="chip chip-{{ session.status }}">{{ session.status | humanize_token }}</span>
+          </div>
+          <p class="muted">{{ session.location_text or "No location set" }}</p>
+          <div class="hosts-session-meta">
+            <span><strong>TX</strong> {{ session.tx_host_label }}</span>
+            <span><strong>RX</strong> {{ session.rx_host_label }}</span>
+            <span><strong>Updated</strong> {{ session.updated_at | human_relative_time if session.updated_at else session.created_at | human_relative_time }}</span>
+          </div>
+        </div>
+        <div class="hosts-session-actions">
+          <a class="button secondary" href="/sessions/{{ session.id }}">Open Session</a>
+          {% if session.has_report %}
+          <a class="button secondary" href="/sessions/{{ session.id }}/report">Read Report</a>
+          {% endif %}
+        </div>
+      </article>
+      {% else %}
+      <p class="muted">No sessions created yet.</p>
+      {% endfor %}
     </div>
   </section>
 </div>

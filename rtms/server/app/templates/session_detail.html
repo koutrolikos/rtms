@@ -2,13 +2,25 @@
 {% block title %}{{ session.name }}{% endblock %}
 {% block content %}
 {% set setup_ready = session.tx_host_id and session.rx_host_id %}
+{% set build_slots = namespace(tx=false, rx=false) %}
+{% for artifact in artifacts %}
+  {% if artifact.status != "failed" %}
+    {% if "TX" in (artifact.role_compatibility or []) %}
+      {% set build_slots.tx = true %}
+    {% endif %}
+    {% if "RX" in (artifact.role_compatibility or []) %}
+      {% set build_slots.rx = true %}
+    {% endif %}
+  {% endif %}
+{% endfor %}
+{% set build_ready = build_slots.tx and build_slots.rx %}
 {% set artifacts_ready = session.tx_artifact_id and session.rx_artifact_id %}
 {% set report_ready = report and report.html_storage_path %}
 {% set stage = namespace(active_id="stage-configure") %}
 {% if setup_ready %}
-  {% if report_ready or session.status == "report_ready" %}
+  {% if report_ready or session.status in ["merging", "report_ready", "failed", "cancelled"] %}
     {% set stage.active_id = "stage-outputs" %}
-  {% elif not artifacts_ready or session.status in ["draft", "selecting_artifacts", "building_artifacts"] %}
+  {% elif not build_ready %}
     {% set stage.active_id = "stage-artifacts" %}
   {% else %}
     {% set stage.active_id = "stage-run" %}
@@ -29,7 +41,7 @@
 >
   {% include "session_detail_fragment.html" %}
 </section>
-<script src="/static/session_detail/pipeline.js?v=20260328a"></script>
-<script src="/static/session_detail/build_form.js?v=20260328a"></script>
-<script src="/static/session_detail.js?v=20260328a"></script>
+<script src="/static/session_detail/pipeline.js?v=20260328c"></script>
+<script src="/static/session_detail/build_form.js?v=20260328c"></script>
+<script src="/static/session_detail.js?v=20260328c"></script>
 {% endblock %}

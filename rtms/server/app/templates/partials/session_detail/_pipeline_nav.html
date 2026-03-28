@@ -6,19 +6,19 @@
     >
       <span class="pipeline-nav-step">1</span>
       <span class="pipeline-nav-copy">
-        <strong>Configure</strong>
+        <strong>Set</strong>
         <small>{{ "Ready" if setup_ready else "Pending setup" }}</small>
       </span>
     </button>
     <button
       type="button"
-      class="pipeline-nav-button {% if stage.current == 2 %}active{% elif artifacts_ready %}complete{% endif %}"
+      class="pipeline-nav-button {% if stage.current == 2 %}active{% elif build_ready %}complete{% endif %}"
       data-pipeline-jump="stage-artifacts"
     >
       <span class="pipeline-nav-step">2</span>
       <span class="pipeline-nav-copy">
-        <strong>Artifacts</strong>
-        <small>{{ "Ready" if artifacts_ready else "Pending assignment" }}</small>
+        <strong>Build</strong>
+        <small>{{ "Ready" if build_ready else "Pending build" }}</small>
       </span>
     </button>
     <button
@@ -34,12 +34,12 @@
     </button>
     <button
       type="button"
-      class="pipeline-nav-button {% if stage.current == 4 %}active{% elif report_ready %}complete{% endif %}"
+      class="pipeline-nav-button {% if stage.current == 4 %}active{% elif report_ready or session.status in ["merging", "report_ready", "failed", "cancelled"] %}complete{% endif %}"
       data-pipeline-jump="stage-outputs"
     >
       <span class="pipeline-nav-step">4</span>
       <span class="pipeline-nav-copy">
-        <strong>Outputs</strong>
+        <strong>Read</strong>
         <small>{{ "Report ready" if report_ready else "Awaiting report" }}</small>
       </span>
     </button>

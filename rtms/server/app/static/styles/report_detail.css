@@ -738,10 +738,6 @@ html[data-theme="dark"] .chart-shell {
 }
 
 .session-screen .pipeline-stage {
-  display: none;
-}
-
-.session-screen .pipeline-stage.is-open {
   display: grid;
 }
 

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
-
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -21,7 +19,7 @@ from rtms.server.app.services.sessions import (
     session_report,
     session_roles,
 )
-from rtms.shared.enums import SessionState
+from rtms.shared.enums import HostStatus, SessionState
 from rtms.shared.schemas import ConfiguredRepo
 
 
@@ -190,19 +188,21 @@ def build_hosts_context(db: Session) -> dict[str, object]:
     host_status = {host.id: visible_host_status(host, settings) for host in hosts}
     host_labels = {host.id: host.label or host.name for host in hosts}
     session_summaries = _build_session_summaries(db, host_labels)
-    host_session_links: dict[str, dict[str, object]] = {}
-    host_sessions: dict[str, list[dict[str, object]]] = defaultdict(list)
-    for summary in session_summaries:
-        for host_id in [summary.get("tx_host_id"), summary.get("rx_host_id")]:
-            if host_id:
-                host_sessions[str(host_id)].append(summary)
-    for host in hosts:
-        summaries = host_sessions.get(host.id, [])
-        active_summary = next((item for item in summaries if item["group"] == "active"), None)
-        if active_summary:
-            host_session_links[host.id] = active_summary
-        elif summaries:
-            host_session_links[host.id] = summaries[0]
+    online_hosts = [host for host in hosts if host_status[host.id] != HostStatus.OFFLINE.value]
+    ordered_hosts = sorted(
+        hosts,
+        key=lambda host: (
+            host_status[host.id] == HostStatus.OFFLINE.value,
+            -(host.last_seen_at.timestamp() if host.last_seen_at else 0.0),
+            host_labels[host.id].lower(),
+        ),
+    )
+    recent_sessions = sorted(
+        session_summaries,
+        key=lambda summary: summary.get("updated_at") or summary.get("created_at"),
+        reverse=True,
+    )[:3]
+    completed_sessions_count = sum(1 for summary in session_summaries if summary["group"] == "completed")
     last_updated_at = max(
         [host.updated_at for host in hosts]
         + [summary["updated_at"] for summary in session_summaries if summary.get("updated_at")],
@@ -210,11 +210,14 @@ def build_hosts_context(db: Session) -> dict[str, object]:
     )
     return {
         "hosts": hosts,
+        "online_hosts": online_hosts,
+        "ordered_hosts": ordered_hosts,
         "host_status": host_status,
         "host_labels": host_labels,
-        "host_session_links": host_session_links,
         "sessions": session_summaries[:8],
+        "recent_sessions": recent_sessions,
         "all_session_summaries": session_summaries,
+        "completed_sessions_count": completed_sessions_count,
         "settings": settings,
         "live_version": hosts_change_token(db),
         "last_updated_at": last_updated_at,

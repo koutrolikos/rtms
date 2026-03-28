@@ -1,39 +1,57 @@
+      {% if session.status == "capturing" %}
+      {% set run_pill_class = "live" %}
+      {% set run_pill_label = "live" %}
+      {% elif session.status in ["failed", "cancelled"] %}
+      {% set run_pill_class = session.status %}
+      {% set run_pill_label = session.status | humanize_token %}
+      {% elif can_start %}
+      {% set run_pill_class = "ready" %}
+      {% set run_pill_label = "ready" %}
+      {% else %}
+      {% set run_pill_class = "pending" %}
+      {% set run_pill_label = "blocked" %}
+      {% endif %}
       <section
         class="pipeline-stage {% if stage.current == 3 %}is-open{% endif %}"
         id="stage-run"
         data-pipeline-stage
-        data-stage-status="{% if stage.current == 3 %}active{% elif report_ready or session.status == 'report_ready' %}complete{% else %}pending{% endif %}"
+        data-stage-status="{% if stage.current == 3 %}active{% elif stage.current == 4 %}complete{% else %}pending{% endif %}"
       >
         <header class="pipeline-stage-head">
-          <div class="pipeline-stage-heading">
-            <div class="pipeline-stage-title">
-              <span class="pipeline-step-number">3</span>
-              <div>
-                <h3>Run</h3>
+          <button type="button" class="pipeline-stage-toggle" data-stage-toggle aria-expanded="{% if stage.current == 3 %}true{% else %}false{% endif %}" aria-controls="stage-run-body">
+            <div class="pipeline-stage-heading">
+              <div class="pipeline-stage-title">
+                <span class="pipeline-step-number">3</span>
+                <div>
+                  <h3>Run</h3>
+                </div>
+              </div>
+              <div class="pipeline-stage-meta">
+                <span class="pipeline-pill {{ run_pill_class }}">
+                  {{ run_pill_label }}
+                </span>
               </div>
             </div>
-            <div class="pipeline-stage-meta">
-              <span class="pipeline-pill {% if session.status == 'capturing' %}live{% elif run_active %}ready{% else %}pending{% endif %}">
-                {% if session.status == "capturing" %}live{% elif run_active %}active{% else %}pending{% endif %}
-              </span>
-            </div>
-          </div>
+            <span class="pipeline-stage-caret" aria-hidden="true"></span>
+          </button>
         </header>
-        <div class="pipeline-stage-body">
+        <div class="pipeline-stage-body" id="stage-run-body">
           <article class="panel run-control-panel">
             <div class="run-control-shell">
               <div class="run-control-status">
                 <div class="run-status-line">
-                  <h3>Control</h3>
+                  <h3>Readiness</h3>
                   <span class="chip chip-{{ session.status }}">{{ session.status | humanize_token }}</span>
                 </div>
                 <p class="muted run-control-summary">
-                  {% if can_start %}
-                  All required hosts and artifacts are assigned. Start capture when the field setup is ready.
-                  {% elif session.status == "capturing" %}
-                  Capture is running. Use annotations to capture environmental changes and stop manually if needed.
+                  {% if session.status == "capturing" %}
+                  Capture is live.
+                  {% elif session.status in ["failed", "cancelled"] %}
+                  Session ended {{ session.status | humanize_token }}.
+                  {% elif can_start %}
+                  Ready to start capture.
                   {% else %}
-                  Resolve the blockers below before the session can start.
+                  Blocked until each readiness item is set.
                   {% endif %}
                 </p>
                 <div class="run-readiness-row">
@@ -59,16 +77,13 @@
                   <button type="submit" class="danger">Manual Stop</button>
                 </form>
                 {% endif %}
-                <form method="post" action="/sessions/{{ session.id }}/report/generate">
-                  <button type="submit" class="secondary">Generate Report</button>
-                </form>
               </div>
             </div>
           </article>
           <div class="run-stage-grid">
             <article class="panel run-role-panel">
               <div class="panel-head">
-                <h3>Role Runs</h3>
+                <h3>Role State</h3>
               </div>
               <div class="run-role-grid">
                 {% for role_name in ["TX", "RX"] %}
@@ -111,7 +126,7 @@
 
             <article class="panel run-annotation-panel">
               <div class="panel-head">
-                <h3>Live Annotation</h3>
+                <h3>Live Annotations</h3>
               </div>
               <form method="post" action="/sessions/{{ session.id }}/annotations" class="stack run-annotation-form">
                 <label><span>Annotation</span><textarea name="text" rows="2" placeholder="Vehicle passed tree line, LOS obstruction, antenna orientation change."></textarea></label>
@@ -119,7 +134,12 @@
               </form>
               <ul class="timeline run-annotation-stream">
                 {% for annotation in annotations %}
-                <li><strong>{{ annotation.created_at }}</strong><span>{{ annotation.text }}</span></li>
+                <li class="run-annotation-item">
+                  <div class="run-annotation-meta">
+                    <strong>{{ annotation.created_at }}</strong>
+                  </div>
+                  <p class="run-annotation-body">{{ annotation.text }}</p>
+                </li>
                 {% else %}
                 <li class="muted run-empty">No annotations yet.</li>
                 {% endfor %}

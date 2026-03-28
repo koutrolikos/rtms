@@ -1,4 +1,5 @@
-@import url("/static/styles/core.css");
-@import url("/static/styles/session.css");
-@import url("/static/styles/report_shell.css");
-@import url("/static/styles/report_detail.css");
+@import url("/static/styles/core.css?v=20260328i");
+@import url("/static/styles/session.css?v=20260328i");
+@import url("/static/styles/report_shell.css?v=20260328i");
+@import url("/static/styles/report_detail.css?v=20260328i");
+@import url("/static/styles/hosts.css?v=20260328i");

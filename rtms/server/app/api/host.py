@@ -44,6 +44,15 @@ def _storage() -> FileStorage:
     return FileStorage(get_settings().data_dir)
 
 
+def _request_ip(request: Request) -> str | None:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        candidate = forwarded_for.split(",")[0].strip()
+        if candidate:
+            return candidate
+    return request.client.host if request.client else None
+
+
 def _parse_enum(enum_type, value: str, field_name: str):
     try:
         return enum_type(value)
@@ -115,14 +124,28 @@ def _stored_file_response(storage_path: str, *, not_found_detail: str) -> FileRe
 
 
 @router.post("/register", response_model=HostRegistrationResponse)
-def register(request: HostRegistrationRequest, db: Session = Depends(get_db)) -> HostRegistrationResponse:
-    host = register_host(db, request)
+def register(
+    payload: HostRegistrationRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HostRegistrationResponse:
+    host = register_host(
+        db,
+        payload.model_copy(update={"ip_address": payload.ip_address or _request_ip(request)}),
+    )
     return HostRegistrationResponse(host_id=host.id, server_time=utc_now())
 
 
 @router.post("/heartbeat", response_model=HostHeartbeatResponse)
-def heartbeat(request: HostHeartbeatRequest, db: Session = Depends(get_db)) -> HostHeartbeatResponse:
-    heartbeat_host(db, request)
+def heartbeat(
+    payload: HostHeartbeatRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HostHeartbeatResponse:
+    heartbeat_host(
+        db,
+        payload.model_copy(update={"ip_address": payload.ip_address or _request_ip(request)}),
+    )
     return HostHeartbeatResponse(server_time=utc_now())
 
 

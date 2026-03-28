@@ -2,38 +2,41 @@
         class="pipeline-stage {% if stage.current == 2 %}is-open{% endif %}"
         id="stage-artifacts"
         data-pipeline-stage
-        data-stage-status="{% if stage.current == 2 %}active{% elif artifacts_ready %}complete{% else %}pending{% endif %}"
+        data-stage-status="{% if stage.current == 2 %}active{% elif build_ready %}complete{% else %}pending{% endif %}"
       >
         <header class="pipeline-stage-head">
-          <div class="pipeline-stage-heading">
-            <div class="pipeline-stage-title">
-              <span class="pipeline-step-number">2</span>
-              <div>
-                <h3>Artifacts</h3>
+          <button type="button" class="pipeline-stage-toggle" data-stage-toggle aria-expanded="{% if stage.current == 2 %}true{% else %}false{% endif %}" aria-controls="stage-artifacts-body">
+            <div class="pipeline-stage-heading">
+              <div class="pipeline-stage-title">
+                <span class="pipeline-step-number">2</span>
+                <div>
+                  <h3>Build</h3>
+                </div>
+              </div>
+              <div class="pipeline-stage-meta">
+                <span class="pipeline-pill {% if build_ready %}ready{% else %}pending{% endif %}">
+                  {{ "ready" if build_ready else "pending" }}
+                </span>
               </div>
             </div>
-            <div class="pipeline-stage-meta">
-              <span class="pipeline-pill {% if artifacts_ready %}ready{% else %}pending{% endif %}">
-                {{ "ready" if artifacts_ready else "pending" }}
-              </span>
-            </div>
-          </div>
+            <span class="pipeline-stage-caret" aria-hidden="true"></span>
+          </button>
         </header>
-        <div class="pipeline-stage-body">
+        <div class="pipeline-stage-body" id="stage-artifacts-body">
           <article class="panel session-build-panel">
             <div class="panel-section-grid">
               <section class="panel-section">
                 <div class="panel-section-head">
-                  <h4>Build</h4>
+                  <h4>Artifact Build</h4>
                 </div>
-                <form method="post" action="/sessions/{{ session.id }}/builds" class="stack" id="session-build-form">
+                <form method="post" action="/sessions/{{ session.id }}/builds" class="stack" id="session-build-form" data-has-tx-build="{% if build_slots.tx %}true{% else %}false{% endif %}" data-has-rx-build="{% if build_slots.rx %}true{% else %}false{% endif %}">
                   <input type="hidden" name="build_config_json" id="build-config-json" />
                   <div class="grid two build-host-grid">
                     <label>
                       <span>Target Slot</span>
                       <select name="role" id="build-role" required>
-                        <option value="TX" {% if not session.tx_artifact_id and session.rx_artifact_id %}selected{% endif %}>TX Slot</option>
-                        <option value="RX" {% if session.tx_artifact_id and not session.rx_artifact_id %}selected{% endif %}>RX Slot</option>
+                        <option value="TX" {% if not build_slots.tx and build_slots.rx %}selected{% endif %}>TX Slot</option>
+                        <option value="RX" {% if build_slots.tx and not build_slots.rx %}selected{% endif %}>RX Slot</option>
                       </select>
                     </label>
                     <label>

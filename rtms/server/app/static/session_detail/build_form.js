@@ -25,6 +25,8 @@
     const buildRoleSelect = screen.querySelector("#build-role");
     const buildRoleHint = screen.querySelector("#build-role-hint");
     const machineLogStatPeriodMs = screen.querySelector("#build-machine-log-stat-period-ms");
+    const hasTxBuild = form.dataset.hasTxBuild === "true";
+    const hasRxBuild = form.dataset.hasRxBuild === "true";
     if (
       !(repoSelect instanceof HTMLSelectElement) ||
       !(commitQuery instanceof HTMLInputElement) ||
@@ -292,8 +294,14 @@
             throw new Error("Load config for this SHA first.");
           }
           const payload = serializeBuildConfig();
+          const selectedRole = buildRoleSelect.value || "TX";
+          const willHaveTxBuild = hasTxBuild || selectedRole === "TX";
+          const willHaveRxBuild = hasRxBuild || selectedRole === "RX";
           buildConfigJson.value = JSON.stringify(payload);
           renderSummary(payload, gitShaInput.value.trim());
+          if (willHaveTxBuild && willHaveRxBuild) {
+            sessionDetail.requestStage?.(screen, "stage-run");
+          }
           clearState();
         } catch (error) {
           event.preventDefault();

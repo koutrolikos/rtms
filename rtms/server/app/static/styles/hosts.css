@@ -1,0 +1,261 @@
+.hosts-screen {
+  display: grid;
+  gap: 1rem;
+}
+
+.hosts-live-shell {
+  display: grid;
+  gap: 1rem;
+}
+
+.hosts-screen .hosts-header {
+  padding: 1.15rem 1.2rem;
+}
+
+.hosts-screen .hosts-header-main {
+  gap: 0.55rem;
+}
+
+.hosts-screen .hosts-header-heading {
+  gap: 0.22rem;
+}
+
+.hosts-screen .hosts-header-main h1 {
+  font-size: clamp(1.75rem, 2.4vw, 2.25rem);
+  font-weight: 580;
+  letter-spacing: -0.04em;
+}
+
+.hosts-screen .hosts-overview-strip {
+  gap: 0.75rem;
+  margin-top: 0;
+}
+
+.hosts-screen .hosts-overview-strip .overview-card {
+  gap: 0.24rem;
+  padding: 0.9rem 0.95rem;
+}
+
+.hosts-roster-panel {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.hosts-roster-panel.panel {
+  padding: 1rem 1.05rem;
+}
+
+.hosts-section-head {
+  align-items: end;
+  margin-bottom: 0.05rem;
+}
+
+.hosts-grid.hosts-roster-grid {
+  margin-top: 0;
+}
+
+.hosts-screen .host-card-simple {
+  gap: 0.75rem;
+  padding: 0.95rem 1rem;
+}
+
+.hosts-screen .host-card-simple .host-card-head {
+  align-items: start;
+}
+
+.hosts-screen .host-card-topline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.hosts-screen .host-card-simple .host-card-title {
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.hosts-screen .host-card-simple .host-card-title h3 {
+  font-size: 1.02rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-last-seen {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.9rem;
+  padding: 0.22rem 0.64rem;
+  border: 1px solid color-mix(in srgb, var(--line) 90%, var(--accent-soft) 10%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 95%, var(--bg) 5%);
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 540;
+  white-space: nowrap;
+  justify-self: end;
+}
+
+.host-last-seen.is-online {
+  border-color: color-mix(in srgb, rgba(40, 121, 79, 0.45) 75%, var(--line) 25%);
+  background: color-mix(in srgb, rgba(40, 121, 79, 0.14) 70%, var(--panel) 30%);
+  color: rgb(33, 108, 68);
+}
+
+.host-inline-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.host-inline-fact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.6rem 0.78rem;
+  border: 1px solid color-mix(in srgb, var(--line) 90%, var(--accent-soft) 10%);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 96%, var(--bg) 4%);
+  color: var(--ink);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.host-inline-fact strong {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.host-inline-fact span:last-child,
+.host-inline-fact {
+  overflow: hidden;
+}
+
+.host-inline-fact strong + * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hosts-recent-sessions-panel {
+  padding: 1rem 1.05rem;
+}
+
+.hosts-session-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.hosts-session-entry {
+  display: grid;
+  gap: 0.6rem 0.9rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, var(--accent-soft) 12%);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--panel) 95%, var(--bg) 5%);
+}
+
+.hosts-session-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 560;
+  letter-spacing: -0.02em;
+}
+
+.hosts-session-entry p {
+  margin: 0.16rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.hosts-session-entry {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.hosts-session-main {
+  min-width: 0;
+}
+
+.hosts-session-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: start;
+  flex-wrap: wrap;
+}
+
+.hosts-session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.8rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.hosts-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+html[data-theme="dark"] .hosts-screen .host-inline-fact,
+html[data-theme="dark"] .host-last-seen,
+html[data-theme="dark"] .hosts-session-entry {
+  border-color: var(--line);
+  background: rgba(17, 22, 28, 0.94);
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .host-last-seen.is-online {
+  border-color: rgba(72, 157, 109, 0.42);
+  background: rgba(20, 54, 37, 0.92);
+  color: rgb(140, 223, 177);
+}
+
+@media (max-width: 900px) {
+  .hosts-screen,
+  .hosts-live-shell {
+    gap: 0.9rem;
+  }
+
+  .hosts-screen .hosts-header {
+    padding: 1rem;
+  }
+
+  .hosts-screen .hosts-header-topline,
+  .hosts-section-head,
+  .hosts-session-entry {
+    grid-template-columns: 1fr;
+  }
+
+  .hosts-screen .host-card-topline,
+  .host-inline-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .host-last-seen {
+    justify-self: start;
+  }
+
+  .hosts-section-head {
+    align-items: start;
+  }
+
+  .hosts-screen .hosts-header-updated {
+    align-self: flex-start;
+  }
+
+  .hosts-session-actions {
+    justify-content: flex-start;
+  }
+}

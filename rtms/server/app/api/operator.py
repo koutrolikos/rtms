@@ -116,11 +116,12 @@ def _coerce_operator_build_config(
 
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    return RedirectResponse(url="/sessions", status_code=303)
+    return RedirectResponse(url="/dashboard", status_code=303)
 
 
+@router.get("/dashboard", response_class=HTMLResponse)
 @router.get("/hosts", response_class=HTMLResponse)
-def hosts_overview(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def dashboard_overview(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     return templates.TemplateResponse(
         name="hosts.html",
         request=request,
@@ -128,8 +129,9 @@ def hosts_overview(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
     )
 
 
+@router.get("/dashboard/fragment", response_class=HTMLResponse)
 @router.get("/hosts/fragment", response_class=HTMLResponse)
-def hosts_fragment(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def dashboard_fragment(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     return templates.TemplateResponse(
         name="hosts_fragment.html",
         request=request,
@@ -204,8 +206,9 @@ def session_detail_fragment(request: Request, session_id: str, db: Session = Dep
     )
 
 
+@router.get("/dashboard/live")
 @router.get("/hosts/live")
-def hosts_live(db: Session = Depends(get_db)) -> dict[str, str]:
+def dashboard_live(db: Session = Depends(get_db)) -> dict[str, str]:
     return {"version": hosts_change_token(db)}
 
 

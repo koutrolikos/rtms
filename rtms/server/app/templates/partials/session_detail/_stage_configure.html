@@ -5,21 +5,24 @@
         data-stage-status="{% if stage.current == 1 %}active{% elif setup_ready %}complete{% else %}pending{% endif %}"
       >
         <header class="pipeline-stage-head">
-          <div class="pipeline-stage-heading">
-            <div class="pipeline-stage-title">
-              <span class="pipeline-step-number">1</span>
-              <div>
-                <h3>Configure</h3>
+          <button type="button" class="pipeline-stage-toggle" data-stage-toggle aria-expanded="{% if stage.current == 1 %}true{% else %}false{% endif %}" aria-controls="stage-configure-body">
+            <div class="pipeline-stage-heading">
+              <div class="pipeline-stage-title">
+                <span class="pipeline-step-number">1</span>
+                <div>
+                  <h3>Set</h3>
+                </div>
+              </div>
+              <div class="pipeline-stage-meta">
+                <span class="pipeline-pill {% if setup_ready %}ready{% else %}pending{% endif %}">
+                  {{ "ready" if setup_ready else "pending" }}
+                </span>
               </div>
             </div>
-            <div class="pipeline-stage-meta">
-              <span class="pipeline-pill {% if setup_ready %}ready{% else %}pending{% endif %}">
-                {{ "ready" if setup_ready else "pending" }}
-              </span>
-            </div>
-          </div>
+            <span class="pipeline-stage-caret" aria-hidden="true"></span>
+          </button>
         </header>
-        <div class="pipeline-stage-body">
+        <div class="pipeline-stage-body" id="stage-configure-body">
           <article class="panel session-setup-panel">
             <div class="panel-section-grid session-setup-grid">
               <section class="panel-section session-setup-section">
@@ -47,7 +50,7 @@
                 <div class="panel-section-head">
                   <h4>Hosts</h4>
                 </div>
-                <form method="post" action="/sessions/{{ session.id }}/hosts" class="stack session-setup-form session-hosts-form">
+                <form method="post" action="/sessions/{{ session.id }}/hosts" class="stack session-setup-form session-hosts-form" data-next-stage="stage-artifacts">
                   <label>
                     <span>TX Host</span>
                     <select name="tx_host_id" required>
