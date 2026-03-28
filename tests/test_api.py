@@ -156,6 +156,30 @@ def _basic_auth_headers(username: str, password: str) -> dict[str, str]:
     return {"Authorization": f"Basic {token}"}
 
 
+def _host(
+    name: str,
+    *,
+    label: str | None = None,
+    build_capable: bool = False,
+    flash_capable: bool = False,
+    capture_capable: bool = False,
+    status: str = "idle",
+) -> Host:
+    return Host(
+        name=name,
+        label=label or name,
+        hostname=f"{name}.local",
+        status=status,
+        capabilities={
+            "build_capable": build_capable,
+            "flash_capable": flash_capable,
+            "capture_capable": capture_capable,
+        },
+        connected_probe_count=1,
+        software_version="0.1.0",
+    )
+
+
 def test_create_session_api(db_session) -> None:
     app = create_app()
 
@@ -183,13 +207,13 @@ def test_create_session_api(db_session) -> None:
     assert session_response.json()["name"] == "api-session"
 
 
-def test_home_redirects_to_sessions(db_session) -> None:
+def test_home_redirects_to_dashboard(db_session) -> None:
     client = _client_with_db(db_session)
 
     response = client.get("/", follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/sessions"
+    assert response.headers["location"] == "/dashboard"
 
 
 def test_sessions_page_groups_search_filters_and_quick_actions(db_session) -> None:
@@ -292,10 +316,12 @@ def test_hosts_page_after_host_register(db_session) -> None:
     assert response.status_code == 200
     hosts_page = client.get("/hosts")
     assert hosts_page.status_code == 200
+    assert "Dashboard" in hosts_page.text
     assert "Bench Host" in hosts_page.text
     assert "Build" in hosts_page.text
     assert "build_capable" not in hosts_page.text
-    assert 'data-copy-label="public url"' in hosts_page.text
+    assert 'data-auto-refresh-url="/dashboard/live"' in hosts_page.text
+    assert 'data-auto-refresh-fragment-url="/dashboard/fragment"' in hosts_page.text
 
 
 def test_hosts_fragment_returns_refreshable_shell_and_markers(db_session) -> None:
@@ -364,13 +390,16 @@ def test_start_session_uses_public_base_url_for_host_downloads(db_session, monke
         origin_type="github_build",
         source_repo="org/repo",
     )
-    db_session.add_all([tx_artifact, rx_artifact])
+    tx_host = _host("host-tx", label="TX Host", flash_capable=True, capture_capable=True)
+    rx_host = _host("host-rx", label="RX Host", flash_capable=True, capture_capable=True)
+    db_session.add_all([tx_host, rx_host, tx_artifact, rx_artifact])
     db_session.commit()
 
-    client.post(
+    assign_hosts_response = client.post(
         f"/api/sessions/{session_id}/hosts",
-        json={"tx_host_id": "host-tx", "rx_host_id": "host-rx"},
+        json={"tx_host_id": tx_host.id, "rx_host_id": rx_host.id},
     )
+    assert assign_hosts_response.status_code == 200
     client.post(
         f"/api/sessions/{session_id}/artifacts/assign",
         json={"role": "TX", "artifact_id": tx_artifact.id},
@@ -535,6 +564,9 @@ def test_request_build_json_stores_high_altitude_cc_build_config_and_payload(
         },
     )
     session_id = session_response.json()["id"]
+    build_host = _host("host-build", label="Build Host", build_capable=True)
+    db_session.add(build_host)
+    db_session.commit()
 
     response = client.post(
         f"/api/sessions/{session_id}/builds",
@@ -543,7 +575,7 @@ def test_request_build_json_stores_high_altitude_cc_build_config_and_payload(
             "role": "TX",
             "repo_id": "high-altitude-cc",
             "git_sha": "deadbeefcafebabe",
-            "build_host_id": "host-build",
+            "build_host_id": build_host.id,
             "build_config": {
                 "machine_log_detail": 1,
                 "machine_log_stat_period_ms": 5000,
@@ -693,13 +725,16 @@ def test_session_build_form_forces_packet_detail_for_high_altitude_cc(db_session
         },
     )
     session_id = session_response.json()["id"]
+    build_host = _host("host-build", label="Build Host", build_capable=True)
+    db_session.add(build_host)
+    db_session.commit()
 
     response = client.post(
         f"/sessions/{session_id}/builds",
         data={
             "repo_id": "high-altitude-cc",
             "git_sha": "deadbeefcafebabe",
-            "build_host_id": "host-build",
+            "build_host_id": build_host.id,
             "role": "TX",
             "build_config_json": '{"machine_log_detail":0,"machine_log_stat_period_ms":5000}',
         },
@@ -760,8 +795,8 @@ def test_session_detail_page_marks_run_stage_active_once_setup_and_artifacts_are
     )
     session_id = session_response.json()["id"]
 
-    tx_host = Host(name="tx-host", label="TX Host", hostname="tx.local", status="idle")
-    rx_host = Host(name="rx-host", label="RX Host", hostname="rx.local", status="idle")
+    tx_host = _host("tx-host", label="TX Host", flash_capable=True, capture_capable=True)
+    rx_host = _host("rx-host", label="RX Host", flash_capable=True, capture_capable=True)
     tx_artifact = Artifact(
         session_id=session_id,
         status="ready",
@@ -824,15 +859,16 @@ def test_session_fragment_returns_refreshable_shell_and_markers(db_session) -> N
     assert 'id="session-live-shell"' in fragment.text
     assert "data-live-shell" in fragment.text
     assert "data-live-updated-at" in fragment.text
-    assert "Next Required Action" in fragment.text
-    assert "Assign both hosts" in fragment.text
+    assert "Assign Hosts" in fragment.text
+    assert "Assign a TX host." in fragment.text
+    assert "Assign an RX host." in fragment.text
 
 
-def test_session_detail_next_action_card_covers_major_state_transitions(db_session) -> None:
+def test_session_fragment_covers_major_stage_transitions(db_session) -> None:
     client = _client_with_db(db_session)
 
-    tx_host = Host(name="tx-next", label="TX Next", hostname="tx.next", status="idle")
-    rx_host = Host(name="rx-next", label="RX Next", hostname="rx.next", status="idle")
+    tx_host = _host("tx-next", label="TX Next", flash_capable=True, capture_capable=True)
+    rx_host = _host("rx-next", label="RX Next", flash_capable=True, capture_capable=True)
     db_session.add_all([tx_host, rx_host])
     db_session.commit()
 
@@ -875,6 +911,66 @@ def test_session_detail_next_action_card_covers_major_state_transitions(db_sessi
     db_session.add_all([needs_hosts, needs_artifacts, ready_to_start, capturing, outputs_ready])
     db_session.commit()
 
+    ready_tx_artifact = Artifact(
+        session_id=ready_to_start.id,
+        status="ready",
+        origin_type="manual_upload",
+        role_compatibility=["TX"],
+        storage_path=f"artifacts/{ready_to_start.id}/tx/bundle.zip",
+    )
+    ready_rx_artifact = Artifact(
+        session_id=ready_to_start.id,
+        status="ready",
+        origin_type="manual_upload",
+        role_compatibility=["RX"],
+        storage_path=f"artifacts/{ready_to_start.id}/rx/bundle.zip",
+    )
+    capturing_tx_artifact = Artifact(
+        session_id=capturing.id,
+        status="ready",
+        origin_type="manual_upload",
+        role_compatibility=["TX"],
+        storage_path=f"artifacts/{capturing.id}/tx/bundle.zip",
+    )
+    capturing_rx_artifact = Artifact(
+        session_id=capturing.id,
+        status="ready",
+        origin_type="manual_upload",
+        role_compatibility=["RX"],
+        storage_path=f"artifacts/{capturing.id}/rx/bundle.zip",
+    )
+    outputs_tx_artifact = Artifact(
+        session_id=outputs_ready.id,
+        status="ready",
+        origin_type="manual_upload",
+        role_compatibility=["TX"],
+        storage_path=f"artifacts/{outputs_ready.id}/tx/bundle.zip",
+    )
+    outputs_rx_artifact = Artifact(
+        session_id=outputs_ready.id,
+        status="ready",
+        origin_type="manual_upload",
+        role_compatibility=["RX"],
+        storage_path=f"artifacts/{outputs_ready.id}/rx/bundle.zip",
+    )
+    db_session.add_all(
+        [
+            ready_tx_artifact,
+            ready_rx_artifact,
+            capturing_tx_artifact,
+            capturing_rx_artifact,
+            outputs_tx_artifact,
+            outputs_rx_artifact,
+        ]
+    )
+    db_session.commit()
+
+    ready_to_start.tx_artifact_id = ready_tx_artifact.id
+    ready_to_start.rx_artifact_id = ready_rx_artifact.id
+    capturing.tx_artifact_id = capturing_tx_artifact.id
+    capturing.rx_artifact_id = capturing_rx_artifact.id
+    outputs_ready.tx_artifact_id = outputs_tx_artifact.id
+    outputs_ready.rx_artifact_id = outputs_rx_artifact.id
     db_session.add(
         Report(
             session_id=outputs_ready.id,
@@ -891,12 +987,16 @@ def test_session_detail_next_action_card_covers_major_state_transitions(db_sessi
     capturing_fragment = client.get(f"/sessions/{capturing.id}/fragment")
     outputs_ready_fragment = client.get(f"/sessions/{outputs_ready.id}/fragment")
 
-    assert "Assign both hosts" in needs_hosts_fragment.text
-    assert "Build or assign the remaining artifacts" in needs_artifacts_fragment.text
-    assert "Start the session" in ready_fragment.text
-    assert "Capture is live" in capturing_fragment.text
-    assert "Outputs are ready" in outputs_ready_fragment.text
-    assert "Open Raw Artifacts" in outputs_ready_fragment.text
+    assert "Assign a TX host." in needs_hosts_fragment.text
+    assert "Assign an RX host." in needs_hosts_fragment.text
+    assert "Assign or build a TX artifact." in needs_artifacts_fragment.text
+    assert "Assign or build an RX artifact." in needs_artifacts_fragment.text
+    assert "Ready to start capture." in ready_fragment.text
+    assert "Start Session" in ready_fragment.text
+    assert "Capture is live." in capturing_fragment.text
+    assert "Manual Stop" in capturing_fragment.text
+    assert "Read Report" in outputs_ready_fragment.text
+    assert "Produced Artifacts" in outputs_ready_fragment.text
 
 
 def test_session_live_endpoint_version_changes_when_session_data_changes(db_session) -> None:
@@ -954,6 +1054,9 @@ def test_session_live_endpoint_version_changes_when_build_job_finishes(db_sessio
         },
     )
     session_id = session_response.json()["id"]
+    build_host = _host("host-build", label="Build Host", build_capable=True)
+    db_session.add(build_host)
+    db_session.commit()
 
     build_response = client.post(
         f"/api/sessions/{session_id}/builds",
@@ -962,7 +1065,7 @@ def test_session_live_endpoint_version_changes_when_build_job_finishes(db_sessio
             "role": "TX",
             "repo_id": "high-altitude-cc",
             "git_sha": "deadbeefcafebabe",
-            "build_host_id": "host-build",
+            "build_host_id": build_host.id,
             "build_config": {
                 "machine_log_detail": 1,
                 "machine_log_stat_period_ms": 5000,
@@ -1029,7 +1132,154 @@ def test_hosts_page_and_live_endpoint_refresh_when_hosts_change(db_session) -> N
 
     hosts_page = client.get("/hosts")
     assert hosts_page.status_code == 200
-    assert 'data-auto-refresh-url="/hosts/live"' in hosts_page.text
+    assert 'data-auto-refresh-url="/dashboard/live"' in hosts_page.text
+
+
+def test_assign_hosts_json_rejects_unknown_runtime_host(db_session) -> None:
+    client = _client_with_db(db_session)
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "host-validation-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+
+    response = client.post(
+        f"/api/sessions/{session_id}/hosts",
+        json={"tx_host_id": "missing-host", "rx_host_id": "missing-host"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "host not found"
+
+
+def test_assign_hosts_json_rejects_host_without_runtime_capabilities(db_session) -> None:
+    client = _client_with_db(db_session)
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "host-capability-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+    build_only_host = _host("build-only", label="Build Only", build_capable=True)
+    runtime_host = _host("runtime-ok", label="Runtime OK", flash_capable=True, capture_capable=True)
+    db_session.add_all([build_only_host, runtime_host])
+    db_session.commit()
+
+    response = client.post(
+        f"/api/sessions/{session_id}/hosts",
+        json={"tx_host_id": build_only_host.id, "rx_host_id": runtime_host.id},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "TX host must be flash-capable and capture-capable"
+
+
+def test_request_build_json_rejects_unknown_build_host(db_session, monkeypatch) -> None:
+    client = _client_with_db(db_session)
+    monkeypatch.setattr("rtms.server.app.api.operator._github", lambda: FakeGitHubService())
+
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "missing-build-host-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "ridge",
+        },
+    ).json()["id"]
+
+    response = client.post(
+        f"/api/sessions/{session_id}/builds",
+        json={
+            "session_id": session_id,
+            "role": "TX",
+            "repo_id": "high-altitude-cc",
+            "git_sha": "deadbeefcafebabe",
+            "build_host_id": "missing-build-host",
+            "build_config": {
+                "machine_log_detail": 1,
+                "machine_log_stat_period_ms": 5000,
+            },
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "host not found"
+
+
+def test_request_build_json_rejects_host_without_build_capability(db_session, monkeypatch) -> None:
+    client = _client_with_db(db_session)
+    monkeypatch.setattr("rtms.server.app.api.operator._github", lambda: FakeGitHubService())
+
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "non-builder-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "ridge",
+        },
+    ).json()["id"]
+    runtime_host = _host("runtime-only", label="Runtime Only", flash_capable=True, capture_capable=True)
+    db_session.add(runtime_host)
+    db_session.commit()
+
+    response = client.post(
+        f"/api/sessions/{session_id}/builds",
+        json={
+            "session_id": session_id,
+            "role": "TX",
+            "repo_id": "high-altitude-cc",
+            "git_sha": "deadbeefcafebabe",
+            "build_host_id": runtime_host.id,
+            "build_config": {
+                "machine_log_detail": 1,
+                "machine_log_stat_period_ms": 5000,
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "build host must be build-capable"
+
+
+def test_host_heartbeat_rejects_unknown_host(db_session) -> None:
+    client = _client_with_db(db_session)
+
+    response = client.post(
+        "/api/host/heartbeat",
+        json={
+            "host_id": "missing-host",
+            "status": "idle",
+            "connected_probe_count": 0,
+            "diagnostics": {},
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "host not found"
+
+
+def test_host_poll_rejects_unknown_host(db_session) -> None:
+    client = _client_with_db(db_session)
+
+    response = client.post(
+        "/api/host/poll",
+        json={
+            "host_id": "missing-host",
+            "status": "idle",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "host not found"
 
 
 def test_report_page_renders_summaries_without_raw_payload_dumps(db_session) -> None:

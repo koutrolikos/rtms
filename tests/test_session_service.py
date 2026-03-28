@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rtms.server.app.core.config import ServerSettings
-from rtms.server.app.models.entities import Artifact, Job, RunSession
+from rtms.server.app.models.entities import Artifact, Host, Job, RunSession
 from rtms.server.app.services.sessions import (
     assign_artifact,
     assign_hosts,
@@ -10,6 +10,21 @@ from rtms.server.app.services.sessions import (
 )
 from rtms.shared.enums import ArtifactStatus, Role
 from rtms.shared.schemas import AssignArtifactRequest, AssignHostsRequest, SessionCreateRequest
+
+
+def _runtime_host(name: str) -> Host:
+    return Host(
+        name=name,
+        label=name,
+        hostname=f"{name}.local",
+        status="idle",
+        capabilities={
+            "build_capable": False,
+            "flash_capable": True,
+            "capture_capable": True,
+        },
+        connected_probe_count=1,
+    )
 
 
 def test_session_start_creates_prepare_jobs(db_session) -> None:
@@ -27,12 +42,14 @@ def test_session_start_creates_prepare_jobs(db_session) -> None:
         origin_type="github_build",
         source_repo="org/repo",
     )
-    db_session.add_all([tx_artifact, rx_artifact])
+    tx_host = _runtime_host("host-tx")
+    rx_host = _runtime_host("host-rx")
+    db_session.add_all([tx_host, rx_host, tx_artifact, rx_artifact])
     db_session.commit()
     assign_hosts(
         db_session,
         session.id,
-        AssignHostsRequest(tx_host_id="host-tx", rx_host_id="host-rx"),
+        AssignHostsRequest(tx_host_id=tx_host.id, rx_host_id=rx_host.id),
     )
     assign_artifact(db_session, session.id, AssignArtifactRequest(role=Role.TX, artifact_id=tx_artifact.id))
     assign_artifact(db_session, session.id, AssignArtifactRequest(role=Role.RX, artifact_id=rx_artifact.id))

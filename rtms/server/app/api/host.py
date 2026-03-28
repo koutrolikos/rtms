@@ -18,6 +18,7 @@ from rtms.server.app.services.sessions import (
     apply_artifact_upload,
     canonical_raw_artifact_storage_path,
     create_manual_artifact_record,
+    get_host_or_404,
     get_session_or_404,
     handle_job_result,
     register_raw_artifact,
@@ -156,6 +157,7 @@ def time_sync() -> dict[str, str]:
 
 @router.post("/poll", response_model=HostPollResponse)
 def poll(request: HostPollRequest, db: Session = Depends(get_db)) -> HostPollResponse:
+    get_host_or_404(db, request.host_id)
     job = poll_next_job(db, request.host_id)
     return HostPollResponse(server_time=utc_now(), job=job_to_envelope(job) if job else None)
 

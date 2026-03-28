@@ -13,6 +13,7 @@ from rtms.server.app.core.config import ServerSettings
 from rtms.server.app.models.entities import (
     Annotation,
     Artifact,
+    Host,
     Job,
     RawArtifact,
     Report,
@@ -66,6 +67,42 @@ def _coerce_role(role: str | Role) -> Role:
 
 def is_terminal_session_status(status: str) -> bool:
     return status in TERMINAL_SESSION_STATES
+
+
+def get_host_or_404(db: Session, host_id: str) -> Host:
+    host = db.get(Host, host_id)
+    if host is None:
+        raise HTTPException(status_code=404, detail="host not found")
+    return host
+
+
+def _host_capability_enabled(host: Host, capability: str) -> bool:
+    return bool((host.capabilities or {}).get(capability))
+
+
+def _require_host_capabilities(host: Host, *, required: tuple[str, ...], detail: str) -> Host:
+    if all(_host_capability_enabled(host, capability) for capability in required):
+        return host
+    raise HTTPException(status_code=400, detail=detail)
+
+
+def validate_runtime_host(db: Session, host_id: str, *, role: Role | None = None) -> Host:
+    host = get_host_or_404(db, host_id)
+    role_label = f"{role.value} host" if role is not None else "host"
+    return _require_host_capabilities(
+        host,
+        required=("flash_capable", "capture_capable"),
+        detail=f"{role_label} must be flash-capable and capture-capable",
+    )
+
+
+def validate_build_host(db: Session, host_id: str) -> Host:
+    host = get_host_or_404(db, host_id)
+    return _require_host_capabilities(
+        host,
+        required=("build_capable",),
+        detail="build host must be build-capable",
+    )
 
 
 def canonical_raw_artifact_storage_path(
@@ -303,6 +340,8 @@ def _reconcile_preflight_state(session: RunSession) -> None:
 
 def assign_hosts(db: Session, session_id: str, request: AssignHostsRequest) -> RunSession:
     session = get_session_or_404(db, session_id)
+    validate_runtime_host(db, request.tx_host_id, role=Role.TX)
+    validate_runtime_host(db, request.rx_host_id, role=Role.RX)
     session.tx_host_id = request.tx_host_id
     session.rx_host_id = request.rx_host_id
     _ensure_role_runs_exist(db, session)
@@ -342,6 +381,7 @@ def request_build(
     if repo.id == HIGH_ALTITUDE_CC_REPO_ID and request.build_config is None:
         raise HTTPException(status_code=400, detail="high-altitude-cc builds require build_config")
     session = get_session_or_404(db, request.session_id)
+    validate_build_host(db, request.build_host_id)
     artifact = Artifact(
         session_id=session.id,
         status=ArtifactStatus.PENDING.value,
@@ -529,6 +569,8 @@ def _assert_session_startable(db: Session, session: RunSession) -> None:
         raise HTTPException(status_code=409, detail=f"session {active.id} is already active")
     if not all([session.tx_host_id, session.rx_host_id, session.tx_artifact_id, session.rx_artifact_id]):
         raise HTTPException(status_code=400, detail="session missing host or artifact assignments")
+    validate_runtime_host(db, session.tx_host_id, role=Role.TX)
+    validate_runtime_host(db, session.rx_host_id, role=Role.RX)
 
 
 def start_session(

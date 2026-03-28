@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from rtms.server.app.core.config import ServerSettings
 from rtms.server.app.models.entities import Host
+from rtms.server.app.services.sessions import get_host_or_404
 from rtms.shared.enums import HostStatus
 from rtms.shared.schemas import HostHeartbeatRequest, HostRegistrationRequest
 from rtms.shared.time_sync import utc_now
@@ -48,9 +49,7 @@ def register_host(db: Session, request: HostRegistrationRequest) -> Host:
 
 
 def heartbeat_host(db: Session, request: HostHeartbeatRequest) -> Host:
-    host = db.get(Host, request.host_id)
-    if host is None:
-        raise ValueError(f"unknown host {request.host_id}")
+    host = get_host_or_404(db, request.host_id)
     host.status = request.status.value
     host.ip_address = request.ip_address
     host.connected_probe_count = request.connected_probe_count
