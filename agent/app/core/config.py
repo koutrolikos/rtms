@@ -5,7 +5,7 @@ import socket
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from shared.schemas import AgentCapabilities
 
@@ -40,6 +40,8 @@ class CaptureSettings(BaseModel):
 
 class AgentSettings(BaseModel):
     server_url: str = "http://127.0.0.1:8000"
+    server_username: str | None = None
+    server_password: str | None = None
     name: str = socket.gethostname()
     label: str | None = None
     hostname: str = socket.gethostname()
@@ -58,6 +60,20 @@ class AgentSettings(BaseModel):
     openocd: OpenOcdSettings = Field(default_factory=OpenOcdSettings)
     capture: CaptureSettings = Field(default_factory=CaptureSettings)
 
+    @model_validator(mode="after")
+    def _validate_server_auth(self) -> "AgentSettings":
+        if bool(self.server_username) != bool(self.server_password):
+            raise ValueError(
+                "RANGE_TEST_SERVER_USERNAME and RANGE_TEST_SERVER_PASSWORD must either both be set or both be empty"
+            )
+        return self
+
+    @property
+    def server_basic_auth(self) -> tuple[str, str] | None:
+        if not self.server_username or not self.server_password:
+            return None
+        return self.server_username, self.server_password
+
     def prepare_dirs(self) -> None:
         for path in (
             self.data_dir,
@@ -74,6 +90,8 @@ def get_settings() -> AgentSettings:
     data_dir = Path(os.getenv("RANGE_TEST_AGENT_DATA_DIR", "agent_data"))
     return AgentSettings(
         server_url=os.getenv("RANGE_TEST_SERVER_URL", "http://127.0.0.1:8000").rstrip("/"),
+        server_username=os.getenv("RANGE_TEST_SERVER_USERNAME"),
+        server_password=os.getenv("RANGE_TEST_SERVER_PASSWORD"),
         name=os.getenv("RANGE_TEST_AGENT_NAME", socket.gethostname()),
         label=os.getenv("RANGE_TEST_AGENT_LABEL"),
         hostname=os.getenv("RANGE_TEST_AGENT_HOSTNAME", socket.gethostname()),

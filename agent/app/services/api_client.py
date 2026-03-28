@@ -87,10 +87,18 @@ def describe_connect_error(server_url: str, exc: Exception) -> ServerConnectionE
 
 
 class ServerClient:
-    def __init__(self, server_url: str, timeout: float = 60.0) -> None:
+    def __init__(
+        self,
+        server_url: str,
+        timeout: float = 60.0,
+        auth: tuple[str, str] | None = None,
+    ) -> None:
         self.server_url = server_url.rstrip("/")
         validate_server_url(self.server_url)
-        self.client = httpx.Client(timeout=timeout)
+        self.client = httpx.Client(
+            timeout=timeout,
+            auth=httpx.BasicAuth(*auth) if auth else None,
+        )
 
     def close(self) -> None:
         self.client.close()

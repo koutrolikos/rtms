@@ -32,7 +32,7 @@ class AgentRuntime:
     def __init__(self, settings: AgentSettings) -> None:
         self.settings = settings
         self.settings.prepare_dirs()
-        self.client = ServerClient(settings.server_url)
+        self.client = ServerClient(settings.server_url, auth=settings.server_basic_auth)
         self.state_store = LocalStateStore(self.settings.data_dir / "state")
         self.build_executor = BuildExecutor(settings)
         self.openocd_executor = OpenOcdExecutor(settings, self.state_store)

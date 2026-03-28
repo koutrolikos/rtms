@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from server.app.api.agent import router as agent_router
 from server.app.api.operator import router as operator_router
+from server.app.core.auth import install_basic_auth
 from server.app.core.config import get_settings
 from server.app.core.logging import configure_logging
 from server.app.db.session import init_db
@@ -25,6 +26,7 @@ def create_app() -> FastAPI:
     settings.reports_dir.mkdir(parents=True, exist_ok=True)
     init_db()
     app = FastAPI(title="RTMS")
+    install_basic_auth(app, settings)
     app.include_router(agent_router)
     app.include_router(operator_router)
     app.mount(

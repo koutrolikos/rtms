@@ -6,7 +6,7 @@ import socket
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from shared.schemas import ConfiguredRepo
 
@@ -25,6 +25,16 @@ class ServerSettings(BaseModel):
     agent_offline_seconds: int = 30
     github_token: str | None = None
     repo_config_path: Path = Path("server_data/repos.json")
+    auth_username: str | None = None
+    auth_password: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_auth_fields(self) -> "ServerSettings":
+        if bool(self.auth_username) != bool(self.auth_password):
+            raise ValueError(
+                "RANGE_TEST_AUTH_USERNAME and RANGE_TEST_AUTH_PASSWORD must either both be set or both be empty"
+            )
+        return self
 
     @property
     def artifacts_dir(self) -> Path:
@@ -37,6 +47,10 @@ class ServerSettings(BaseModel):
     @property
     def reports_dir(self) -> Path:
         return self.data_dir / self.reports_dir_name
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.auth_username and self.auth_password)
 
     def load_repos(self) -> list[ConfiguredRepo]:
         if not self.repo_config_path.exists():
@@ -88,6 +102,8 @@ def get_settings() -> ServerSettings:
         ),
         agent_offline_seconds=int(os.getenv("RANGE_TEST_AGENT_OFFLINE_SECONDS", "30")),
         github_token=os.getenv("GITHUB_TOKEN"),
+        auth_username=os.getenv("RANGE_TEST_AUTH_USERNAME"),
+        auth_password=os.getenv("RANGE_TEST_AUTH_PASSWORD"),
         repo_config_path=Path(
             os.getenv("RANGE_TEST_REPO_CONFIG", str(data_dir / "repos.json"))
         ),

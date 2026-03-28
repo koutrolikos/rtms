@@ -37,6 +37,7 @@ If flashing or capture fails, inspect:
 - Session start notes remain editable after the session ends.
 - Manual stop is available while the session is capturing.
 - Raw artifacts are always preserved, even if parsing or report generation is imperfect.
+- If server auth is enabled, the browser will prompt for HTTP Basic credentials before loading the UI, and agents must be configured with matching `RANGE_TEST_SERVER_USERNAME` and `RANGE_TEST_SERVER_PASSWORD` values.
 
 ## Prebuilt ELF Upload
 

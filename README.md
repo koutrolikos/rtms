@@ -129,6 +129,31 @@ curl http://172.20.10.3:8000/healthz
 
 You should get a healthy response before starting the agent.
 
+## Authentication
+
+RTMS now supports optional HTTP Basic auth for both the web UI and the agent API.
+
+Enable it on the server:
+
+```bash
+export RANGE_TEST_AUTH_USERNAME="rtms"
+export RANGE_TEST_AUTH_PASSWORD="change-me"
+```
+
+When auth is enabled, configure every agent with matching credentials:
+
+```bash
+export RANGE_TEST_SERVER_USERNAME="rtms"
+export RANGE_TEST_SERVER_PASSWORD="change-me"
+```
+
+Notes:
+
+- `/healthz` remains open for simple liveness checks.
+- All other operator and agent endpoints require Basic auth.
+- Browser access will prompt for credentials automatically.
+- CLI checks can use `curl -u rtms:change-me http://172.20.10.3:8000/sessions`.
+
 ## Dependency Matrix (What Is Actually Required)
 
 Install only what you need for the capabilities enabled on that host.
@@ -213,6 +238,13 @@ use:
 
 ```bash
 export RANGE_TEST_SERVER_URL="http://127.0.0.1:8000"
+```
+
+If server auth is enabled, also set:
+
+```bash
+export RANGE_TEST_SERVER_USERNAME="rtms"
+export RANGE_TEST_SERVER_PASSWORD="change-me"
 ```
 
 On Windows PowerShell:

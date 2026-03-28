@@ -129,6 +129,13 @@ From the agent host:
 curl http://172.20.10.3:8000/healthz
 ```
 
+If server auth is enabled, keep using `/healthz` for the anonymous liveness check, then export:
+
+```bash
+export RANGE_TEST_SERVER_USERNAME="rtms"
+export RANGE_TEST_SERVER_PASSWORD="change-me"
+```
+
 ## Dependency Matrix (By Agent Capability)
 
 Install only what the host will do.
@@ -244,6 +251,16 @@ If the detected address is wrong, set:
 ```bash
 export RANGE_TEST_SERVER_PUBLIC_BASE_URL="http://172.20.10.3:8000"
 ```
+
+Optional HTTP Basic auth:
+
+```bash
+export RANGE_TEST_AUTH_USERNAME="rtms"
+export RANGE_TEST_AUTH_PASSWORD="change-me"
+```
+
+When enabled, agents must also set matching `RANGE_TEST_SERVER_USERNAME` and
+`RANGE_TEST_SERVER_PASSWORD` values.
 
 When the machine was bootstrapped with the provided scripts, runtime state is pinned under
 the install directory by default:

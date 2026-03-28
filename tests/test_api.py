@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import zipfile
 
@@ -145,6 +146,11 @@ def _bundle_bytes(*, session_id: str, artifact_id: str | None = None) -> bytes:
             ),
         )
     return payload.getvalue()
+
+
+def _basic_auth_headers(username: str, password: str) -> dict[str, str]:
+    token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+    return {"Authorization": f"Basic {token}"}
 
 
 def test_create_session_api(db_session) -> None:
@@ -391,6 +397,62 @@ def test_healthz_reports_public_network_url(db_session) -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert "public_base_url" in payload
+
+
+def test_auth_requires_credentials_when_enabled(db_session, monkeypatch) -> None:
+    settings = ServerSettings(
+        public_base_url="http://172.20.10.3:8000",
+        auth_username="operator",
+        auth_password="secret",
+    )
+    client = _client_with_db_and_settings(db_session, monkeypatch, settings)
+
+    unauthenticated = client.get("/sessions")
+    assert unauthenticated.status_code == 401
+    assert unauthenticated.headers["www-authenticate"] == 'Basic realm="RTMS"'
+
+    health = client.get("/healthz")
+    assert health.status_code == 200
+
+    authenticated = client.get(
+        "/sessions",
+        headers=_basic_auth_headers("operator", "secret"),
+    )
+    assert authenticated.status_code == 200
+
+
+def test_agent_register_requires_credentials_when_auth_enabled(db_session, monkeypatch) -> None:
+    settings = ServerSettings(
+        public_base_url="http://172.20.10.3:8000",
+        auth_username="operator",
+        auth_password="secret",
+    )
+    client = _client_with_db_and_settings(db_session, monkeypatch, settings)
+    payload = {
+        "name": "agent-auth",
+        "label": "Auth Agent",
+        "hostname": "agent-auth.local",
+        "capabilities": {
+            "build_capable": True,
+            "flash_capable": True,
+            "capture_capable": True,
+        },
+        "ip_address": "127.0.0.1",
+        "connected_probe_count": 1,
+        "location_text": "lab",
+        "software_version": "0.1.0",
+    }
+
+    unauthenticated = client.post("/api/agent/register", json=payload)
+    assert unauthenticated.status_code == 401
+
+    authenticated = client.post(
+        "/api/agent/register",
+        json=payload,
+        headers=_basic_auth_headers("operator", "secret"),
+    )
+    assert authenticated.status_code == 200
+    assert authenticated.json()["agent_id"]
 
 
 def test_validate_server_url_allows_localhost_for_same_machine_dev() -> None:
