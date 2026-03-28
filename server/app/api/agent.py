@@ -16,6 +16,7 @@ from server.app.services.agents import heartbeat_agent, register_agent
 from server.app.services.jobs import job_to_envelope, poll_next_job
 from server.app.services.sessions import (
     apply_artifact_upload,
+    canonical_raw_artifact_storage_path,
     create_manual_artifact_record,
     get_session_or_404,
     handle_job_result,
@@ -211,7 +212,16 @@ async def upload_raw_artifact(
     artifact_type_value = _parse_enum(RawArtifactType, artifact_type, "artifact_type")
     metadata = _parse_metadata_json(metadata_json)
     filename = _safe_upload_filename(file)
-    relative_path = Path("raw") / session_id / (role_value.value if role_value else "session") / filename
+    try:
+        relative_path = canonical_raw_artifact_storage_path(
+            session_id=session_id,
+            artifact_type=artifact_type_value,
+            role=role_value,
+            metadata=metadata,
+            filename=filename,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     stored_path, sha256, size = storage.save_upload(file.file, relative_path)
     raw = register_raw_artifact(
         db,

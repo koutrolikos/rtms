@@ -21,6 +21,7 @@ from server.app.models.entities import (
     SessionRoleRun,
 )
 from server.app.services import jobs as job_service
+from server.app.services.storage import FileStorage
 from shared.high_altitude_cc import HIGH_ALTITUDE_CC_REPO_ID
 from shared.enums import (
     ArtifactOriginType,
@@ -52,8 +53,137 @@ from shared.time_sync import utc_now
 logger = logging.getLogger(__name__)
 
 
+TERMINAL_SESSION_STATES = {
+    SessionState.REPORT_READY.value,
+    SessionState.FAILED.value,
+    SessionState.CANCELLED.value,
+}
+
+
 def _coerce_role(role: str | Role) -> Role:
     return role if isinstance(role, Role) else Role(role)
+
+
+def is_terminal_session_status(status: str) -> bool:
+    return status in TERMINAL_SESSION_STATES
+
+
+def canonical_raw_artifact_storage_path(
+    *,
+    session_id: str,
+    artifact_type: RawArtifactType,
+    role: Role | None,
+    metadata: dict[str, Any] | None = None,
+    filename: str | None = None,
+) -> str:
+    role_dir = role.value if role else "session"
+    metadata = metadata or {}
+    singleton_filenames = {
+        RawArtifactType.OPENOCD_LOG: "openocd.log",
+        RawArtifactType.AGENT_EVENT_LOG: "agent_events.jsonl",
+        RawArtifactType.TIMING_SAMPLES: "timing_samples.json",
+        RawArtifactType.RTT_LOG: "rtt.log",
+        RawArtifactType.RTT_MACHINE_LOG: "rtt.rttbin",
+        RawArtifactType.CAPTURE_COMMAND_LOG: "capture_command.log",
+    }
+    if artifact_type in singleton_filenames:
+        if role is None:
+            raise ValueError(f"{artifact_type.value} uploads require a role")
+        return str(Path("raw") / session_id / role.value / singleton_filenames[artifact_type])
+    if artifact_type == RawArtifactType.BUILD_LOG:
+        artifact_id = str(metadata.get("artifact_id") or "").strip()
+        if not artifact_id:
+            raise ValueError("build_log uploads require metadata.artifact_id")
+        return str(Path("raw") / session_id / "artifacts" / artifact_id / "build.log")
+    if artifact_type == RawArtifactType.PARSER_OUTPUT:
+        return str(Path("reports") / session_id / "parser_output.json")
+    if filename:
+        return str(Path("raw") / session_id / role_dir / filename)
+    return str(Path("raw") / session_id / role_dir / f"{artifact_type.value}.bin")
+
+
+def _delete_storage_file(storage: FileStorage, storage_path: str) -> bool:
+    try:
+        path = storage.resolve(storage_path)
+    except ValueError:
+        return False
+    if path.exists() and not path.is_file():
+        return False
+    removed = False
+    try:
+        path.unlink()
+        removed = True
+    except FileNotFoundError:
+        removed = False
+    current = path.parent
+    while current != storage.base_dir and current.exists():
+        try:
+            current.rmdir()
+        except OSError:
+            break
+        current = current.parent
+    return removed
+
+
+def cleanup_terminal_artifact_bundles(
+    db: Session,
+    *,
+    settings: ServerSettings | None = None,
+    storage_root: Path | None = None,
+    session_id: str,
+) -> list[str]:
+    session = get_session_or_404(db, session_id)
+    if not is_terminal_session_status(session.status):
+        return []
+    base_dir = storage_root or (settings.data_dir if settings is not None else None)
+    if base_dir is None:
+        raise ValueError("cleanup_terminal_artifact_bundles requires settings or storage_root")
+    storage = FileStorage(base_dir)
+    removed_paths: list[str] = []
+    for artifact in session_artifacts(db, session_id):
+        if not artifact.storage_path:
+            continue
+        storage_path = artifact.storage_path
+        _delete_storage_file(storage, storage_path)
+        artifact.storage_path = None
+        removed_paths.append(storage_path)
+    db.commit()
+    return removed_paths
+
+
+def delete_terminal_session(
+    db: Session,
+    *,
+    settings: ServerSettings,
+    session_id: str,
+) -> None:
+    session = get_session_or_404(db, session_id)
+    if not is_terminal_session_status(session.status):
+        raise HTTPException(status_code=400, detail="only terminal sessions can be deleted")
+
+    report = session_report(db, session_id)
+    storage_paths = {
+        item.storage_path
+        for item in session_artifacts(db, session_id)
+        if item.storage_path
+    }
+    storage_paths.update(
+        item.storage_path
+        for item in raw_artifacts(db, session_id)
+        if item.storage_path
+    )
+    if report and report.html_storage_path:
+        storage_paths.add(report.html_storage_path)
+
+    storage = FileStorage(settings.data_dir)
+    for storage_path in sorted(storage_paths):
+        _delete_storage_file(storage, storage_path)
+
+    for model in (Annotation, SessionEvent, Job, SessionRoleRun, RawArtifact, Artifact):
+        db.query(model).filter(model.session_id == session_id).delete(synchronize_session=False)
+    db.query(Report).filter(Report.session_id == session_id).delete(synchronize_session=False)
+    db.query(SessionModel).filter(SessionModel.id == session_id).delete(synchronize_session=False)
+    db.commit()
 
 
 def log_event(
@@ -529,16 +659,27 @@ def register_raw_artifact(
     size_bytes: int,
     metadata: dict[str, Any] | None = None,
 ) -> RawArtifact:
-    raw = RawArtifact(
-        session_id=session_id,
-        role=role.value if role else None,
-        type=artifact_type.value,
-        storage_path=storage_path,
-        hash_sha256=sha256,
-        size_bytes=size_bytes,
-        metadata_json=metadata or {},
+    existing = (
+        db.query(RawArtifact)
+        .filter(
+            RawArtifact.session_id == session_id,
+            RawArtifact.storage_path == storage_path,
+        )
+        .order_by(RawArtifact.created_at.asc())
+        .all()
     )
-    db.add(raw)
+    raw = existing[0] if existing else RawArtifact(session_id=session_id, storage_path=storage_path)
+    raw.role = role.value if role else None
+    raw.type = artifact_type.value
+    raw.storage_path = storage_path
+    raw.hash_sha256 = sha256
+    raw.size_bytes = size_bytes
+    raw.metadata_json = metadata or {}
+    raw.created_at = utc_now()
+    if not existing:
+        db.add(raw)
+    for duplicate in existing[1:]:
+        db.delete(duplicate)
     db.commit()
     db.refresh(raw)
     log_event(
@@ -598,7 +739,13 @@ def apply_artifact_upload(
     return artifact
 
 
-def _mark_session_failed(db: Session, session: SessionModel, reason: str) -> None:
+def _mark_session_failed(
+    db: Session,
+    *,
+    settings: ServerSettings,
+    session: SessionModel,
+    reason: str,
+) -> None:
     if session.status not in {SessionState.FAILED.value, SessionState.CANCELLED.value}:
         session.status = transition_session(SessionState(session.status), SessionState.FAILED).value
         session.ended_at = utc_now()
@@ -611,6 +758,7 @@ def _mark_session_failed(db: Session, session: SessionModel, reason: str) -> Non
         event_type=EventType.DIAGNOSTIC,
         payload={"failure_reason": reason},
     )
+    cleanup_terminal_artifact_bundles(db, settings=settings, session_id=session.id)
 
 
 def _upsert_report(db: Session, session_id: str) -> Report:
@@ -690,7 +838,12 @@ def handle_job_result(
             role_run.status = transition_role_run(RoleRunState(role_run.status), RoleRunState.FAILED).value
             role_run.failure_reason = result.failure_reason
             db.commit()
-            _mark_session_failed(db, session, result.failure_reason or "prepare role failed")
+            _mark_session_failed(
+                db,
+                settings=settings,
+                session=session,
+                reason=result.failure_reason or "prepare role failed",
+            )
             return job
         role_run.hidden_probe_identity = result.diagnostics.get("probe_serial")
         role_run.flash_started_at = role_run.flash_started_at or utc_now()
@@ -717,7 +870,12 @@ def handle_job_result(
             role_run.status = transition_role_run(RoleRunState(role_run.status), RoleRunState.FAILED).value
             role_run.failure_reason = result.failure_reason
             db.commit()
-            _mark_session_failed(db, session, result.failure_reason or "capture failed")
+            _mark_session_failed(
+                db,
+                settings=settings,
+                session=session,
+                reason=result.failure_reason or "capture failed",
+            )
             return job
         role_run.capture_finished_at = utc_now()
         role_run.status = transition_role_run(RoleRunState(role_run.status), RoleRunState.COMPLETED).value

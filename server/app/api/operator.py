@@ -26,7 +26,9 @@ from server.app.services.sessions import (
     annotations,
     assign_artifact,
     assign_hosts,
+    delete_terminal_session,
     get_session_or_404,
+    is_terminal_session_status,
     list_sessions,
     raw_artifacts,
     request_build,
@@ -242,6 +244,7 @@ def _session_summary(
         "report_status": report.status if report else session.report_status,
         "raw_artifact_count": raw_artifact_count,
         "next_action": _next_action_for_session(session, report),
+        "can_delete": is_terminal_session_status(session.status),
     }
 
 
@@ -346,6 +349,7 @@ def _build_session_detail_context(db: Session, session_id: str) -> tuple[Session
         "raw_artifacts_page_url": f"/sessions/{session.id}/artifacts",
         "report_json_url": f"/api/sessions/{session.id}/report/json",
         "timeline_json_url": f"/api/sessions/{session.id}/timeline",
+        "can_delete_session": is_terminal_session_status(session.status),
     }
     return session, context
 
@@ -555,6 +559,12 @@ def session_annotation_action(
     return RedirectResponse(url=f"/sessions/{session_id}", status_code=303)
 
 
+@router.post("/sessions/{session_id}/delete")
+def session_delete_action(session_id: str, db: Session = Depends(get_db)) -> RedirectResponse:
+    delete_terminal_session(db, settings=get_settings(), session_id=session_id)
+    return RedirectResponse(url="/sessions", status_code=303)
+
+
 @router.get("/sessions/{session_id}/report", response_class=HTMLResponse)
 def report_page(request: Request, session_id: str, db: Session = Depends(get_db)) -> HTMLResponse:
     session = get_session_or_404(db, session_id)
@@ -710,6 +720,12 @@ def annotation_json(
 ) -> dict:
     annotation = add_annotation(db, session_id, payload)
     return {"id": annotation.id, "created_at": annotation.created_at}
+
+
+@router.delete("/api/sessions/{session_id}")
+def delete_session_json(session_id: str, db: Session = Depends(get_db)) -> dict:
+    delete_terminal_session(db, settings=get_settings(), session_id=session_id)
+    return {"status": "deleted", "id": session_id}
 
 
 @router.get("/api/sessions/{session_id}/artifacts")

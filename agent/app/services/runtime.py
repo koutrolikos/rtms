@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import argparse
 import logging
+import shutil
 import time
 from pathlib import Path
 
@@ -9,7 +9,7 @@ from agent.app.core.config import AgentSettings
 from agent.app.executors.build import BuildExecutor
 from agent.app.executors.capture import RunningCapture
 from agent.app.executors.openocd import OpenOcdExecutor
-from agent.app.services.api_client import ServerClient
+from agent.app.services.api_client import ServerClient, ServerConnectionError
 from agent.app.services.bundles import create_prebuilt_elf_bundle
 from agent.app.services.probes import ProbeInventorySnapshot, scan_probe_inventory
 from agent.app.storage.local_state import LocalStateStore
@@ -28,6 +28,9 @@ from shared.schemas import (
 logger = logging.getLogger(__name__)
 
 
+TERMINAL_SESSION_STATUSES = {"report_ready", "failed", "cancelled"}
+
+
 class AgentRuntime:
     def __init__(self, settings: AgentSettings) -> None:
         self.settings = settings
@@ -41,6 +44,7 @@ class AgentRuntime:
         self.last_heartbeat_at = 0.0
         self.latest_time_sample = None
         self.last_probe_scan_at = 0.0
+        self.last_cleanup_sweep_at = 0.0
         self.probe_inventory = ProbeInventorySnapshot(
             connected_probes=[],
             configured_probe_serial=self.settings.openocd.probe_serial,
@@ -63,6 +67,7 @@ class AgentRuntime:
         )
         self.agent_id = response.agent_id
         self.sample_time_sync()
+        self._cleanup_local_sessions(force=True)
 
     def sample_time_sync(self) -> None:
         self.latest_time_sample = self.client.sample_time_sync()
@@ -100,6 +105,7 @@ class AgentRuntime:
             raise RuntimeError("agent not registered")
         self.heartbeat_if_needed()
         self._collect_finished_captures()
+        self._cleanup_local_sessions()
         response = self.client.poll(self.agent_id, self.current_status())
         if response.job is None:
             return
@@ -126,6 +132,7 @@ class AgentRuntime:
                     probe_inventory=probe_inventory,
                 )
                 if result.success:
+                    self._delete_file(bundle_path)
                     try:
                         self._upload_prepare_side_effects(payload)
                     except Exception as exc:
@@ -202,18 +209,13 @@ class AgentRuntime:
 
     def _collect_finished_captures(self) -> None:
         finished: list[str] = []
-        for job_id, capture in self.running_captures.items():
+        for job_id, capture in list(self.running_captures.items()):
             if not capture.done():
                 continue
             result = capture.result()
             context = capture.context
             upload_error: Exception | None = None
-            for path, artifact_type in (
-                (capture.rtt_human_log_path, RawArtifactType.RTT_LOG),
-                (capture.rtt_machine_log_path, RawArtifactType.RTT_MACHINE_LOG),
-                (Path(context.event_log_path) if context.event_log_path else None, RawArtifactType.AGENT_EVENT_LOG),
-                (Path(context.timing_samples_path) if context.timing_samples_path else None, RawArtifactType.TIMING_SAMPLES),
-            ):
+            for path, artifact_type in self._capture_upload_targets(capture):
                 if path and Path(path).exists():
                     try:
                         self.client.upload_raw_artifact(
@@ -234,9 +236,25 @@ class AgentRuntime:
                     time_samples=result.time_samples,
                 )
             self.client.report_job_result(job_id, result)
+            if upload_error is None:
+                self._cleanup_local_role(
+                    session_id=context.session_id,
+                    role=Role(context.role),
+                    bundle_path=Path(context.bundle_path),
+                )
             finished.append(job_id)
         for job_id in finished:
             self.running_captures.pop(job_id, None)
+
+    def _capture_upload_targets(self, capture: RunningCapture) -> list[tuple[Path | None, RawArtifactType]]:
+        context = capture.context
+        return [
+            (capture.rtt_human_log_path, RawArtifactType.RTT_LOG),
+            (capture.rtt_machine_log_path, RawArtifactType.RTT_MACHINE_LOG),
+            (capture.capture_command_log_path, RawArtifactType.CAPTURE_COMMAND_LOG),
+            (Path(context.event_log_path) if context.event_log_path else None, RawArtifactType.AGENT_EVENT_LOG),
+            (Path(context.timing_samples_path) if context.timing_samples_path else None, RawArtifactType.TIMING_SAMPLES),
+        ]
 
     def run(self) -> None:
         logger.info(
@@ -252,6 +270,10 @@ class AgentRuntime:
             time.sleep(self.settings.poll_interval_seconds)
 
     def close(self) -> None:
+        try:
+            self._cleanup_local_sessions(force=True)
+        except Exception:  # pragma: no cover - best-effort shutdown cleanup
+            logger.exception("failed to clean local session state during shutdown")
         try:
             self.build_executor.cleanup_stale_build_artifacts()
         except Exception:  # pragma: no cover - best-effort shutdown cleanup
@@ -359,3 +381,144 @@ class AgentRuntime:
         )
         logger.debug("uploaded prebuilt manifest: %s", manifest.model_dump(mode="json"))
         return upload.artifact_id
+
+    def _cleanup_local_sessions(self, *, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and self.last_cleanup_sweep_at:
+            interval = max(self.settings.heartbeat_interval_seconds, self.settings.poll_interval_seconds)
+            if (now - self.last_cleanup_sweep_at) < interval:
+                return
+        self.last_cleanup_sweep_at = now
+        active_sessions = {
+            capture.context.session_id
+            for capture in self.running_captures.values()
+            if not capture.done()
+        }
+        for session_id in sorted(self._iter_local_session_ids()):
+            if session_id in active_sessions:
+                continue
+            self._cleanup_local_session(session_id)
+
+    def _iter_local_session_ids(self) -> set[str]:
+        session_ids: set[str] = set()
+        for root in (self.settings.sessions_root, self.settings.downloads_root):
+            if not root.exists():
+                continue
+            for path in root.iterdir():
+                if path.is_dir():
+                    session_ids.add(path.name)
+        if self.state_store.context_dir.exists():
+            for path in self.state_store.context_dir.glob("*.json"):
+                stem = path.stem
+                if "_" not in stem:
+                    continue
+                session_id, _role = stem.rsplit("_", 1)
+                session_ids.add(session_id)
+        return session_ids
+
+    def _cleanup_local_session(self, session_id: str) -> None:
+        try:
+            session_payload = self.client.get_session_status(session_id)
+        except ServerConnectionError as exc:
+            logger.warning("cleanup sweep skipped for session %s: %s", session_id, exc)
+            return
+        if session_payload is None:
+            self._delete_local_session(session_id)
+            return
+        status = str(session_payload.get("status") or "")
+        if status not in TERMINAL_SESSION_STATUSES:
+            return
+        try:
+            self._upload_remaining_session_artifacts(session_id)
+        except Exception as exc:  # pragma: no cover - best-effort retry path
+            logger.warning("cleanup sweep upload failed for session %s: %s", session_id, exc)
+            return
+        self._delete_local_session(session_id)
+
+    def _upload_remaining_session_artifacts(self, session_id: str) -> None:
+        session_dir = self.settings.sessions_root / session_id
+        if not session_dir.exists():
+            return
+        for role_dir in sorted(path for path in session_dir.iterdir() if path.is_dir()):
+            role = self._role_from_dir_name(role_dir.name)
+            if role is None:
+                continue
+            capture_stage = any(
+                (role_dir / filename).exists()
+                for filename in ("rtt.log", "rtt.rttbin", "capture-command.log")
+            )
+            for filename, artifact_type in (
+                ("openocd.log", RawArtifactType.OPENOCD_LOG),
+                ("agent_events.jsonl", RawArtifactType.AGENT_EVENT_LOG),
+                ("timing_samples.json", RawArtifactType.TIMING_SAMPLES),
+                ("rtt.log", RawArtifactType.RTT_LOG),
+                ("rtt.rttbin", RawArtifactType.RTT_MACHINE_LOG),
+                ("capture-command.log", RawArtifactType.CAPTURE_COMMAND_LOG),
+            ):
+                path = role_dir / filename
+                if not path.exists():
+                    continue
+                stage = "capture" if capture_stage and artifact_type not in {RawArtifactType.OPENOCD_LOG} else "prepare"
+                self.client.upload_raw_artifact(
+                    path=path,
+                    session_id=session_id,
+                    artifact_type=artifact_type,
+                    role=role,
+                    metadata={"stage": stage, "source": "cleanup_sweep"},
+                )
+
+    def _cleanup_local_role(self, *, session_id: str, role: Role, bundle_path: Path | None) -> None:
+        if bundle_path is not None:
+            self._delete_file(bundle_path)
+        session_dir = self.settings.sessions_root / session_id
+        role_dir = session_dir / role.value.lower()
+        self._delete_tree(role_dir)
+        context_path = self.state_store.context_path(session_id, role.value)
+        self._delete_file(context_path)
+        downloads_dir = self.settings.downloads_root / session_id
+        if downloads_dir.exists():
+            for candidate in downloads_dir.glob(f"{role.value.lower()}_*.zip"):
+                self._delete_file(candidate)
+        self._remove_empty_dir(downloads_dir)
+        self._remove_empty_dir(session_dir)
+
+    def _delete_local_session(self, session_id: str) -> None:
+        self._delete_tree(self.settings.sessions_root / session_id)
+        self._delete_tree(self.settings.downloads_root / session_id)
+        for context_path in self.state_store.context_dir.glob(f"{session_id}_*.json"):
+            self._delete_file(context_path)
+
+    def _delete_tree(self, path: Path) -> None:
+        if not path.exists():
+            return
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+            return
+        self._delete_file(path)
+
+    def _delete_file(self, path: Path) -> None:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return
+
+    def _remove_empty_dir(self, path: Path) -> None:
+        current = path
+        protected_roots = {
+            self.settings.sessions_root,
+            self.settings.downloads_root,
+            self.state_store.context_dir,
+            self.state_store.root,
+        }
+        while current.exists() and current not in protected_roots:
+            try:
+                current.rmdir()
+            except OSError:
+                break
+            current = current.parent
+
+    def _role_from_dir_name(self, value: str) -> Role | None:
+        try:
+            return Role(value.upper())
+        except ValueError:
+            return None

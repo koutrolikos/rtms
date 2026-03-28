@@ -97,6 +97,11 @@
           {% if session.raw_artifact_count %}
           <a class="button secondary" href="/sessions/{{ session.id }}/artifacts">Open Raw Artifacts</a>
           {% endif %}
+          {% if session.can_delete %}
+          <form method="post" action="/sessions/{{ session.id }}/delete" onsubmit="return confirm('Delete this terminal session and all stored data?');">
+            <button type="submit" class="button danger">Delete Session</button>
+          </form>
+          {% endif %}
         </div>
       </article>
       {% else %}

@@ -5,6 +5,7 @@ import io
 import zipfile
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from agent.app.services.api_client import (
@@ -16,7 +17,9 @@ from server.app.core.config import ServerSettings
 from server.app.db.session import get_db
 from server.app.main import create_app
 from server.app.models.entities import AgentHost, Artifact, Job, RawArtifact, Report, Session as SessionModel
+from server.app.services.sessions import cleanup_terminal_artifact_bundles
 from server.app.services.storage import FileStorage
+from shared.enums import RawArtifactType
 from shared.schemas import BuildRecipe, ConfiguredRepo
 
 
@@ -230,7 +233,7 @@ def test_sessions_page_groups_search_filters_and_quick_actions(db_session) -> No
             session_id=completed_session.id,
             role=None,
             type="parser_output",
-            storage_path=f"raw/{completed_session.id}/parser_output.json",
+            storage_path=f"reports/{completed_session.id}/parser_output.json",
             hash_sha256="hash",
             size_bytes=42,
             metadata_json={"generated": True},
@@ -256,6 +259,9 @@ def test_sessions_page_groups_search_filters_and_quick_actions(db_session) -> No
     assert "Open Session" in response.text
     assert f'href="/sessions/{completed_session.id}/report"' in response.text
     assert f'href="/sessions/{completed_session.id}/artifacts"' in response.text
+    assert f'action="/sessions/{failed_session.id}/delete"' in response.text
+    assert f'action="/sessions/{completed_session.id}/delete"' in response.text
+    assert f'action="/sessions/{active_session.id}/delete"' not in response.text
 
 
 def test_hosts_page_after_agent_register(db_session) -> None:
@@ -633,6 +639,36 @@ def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
     assert f'data-active-stage-storage-key="session-active-stage:{session_id}"' in response.text
     assert f'data-stage-storage-key="session-stage:{session_id}"' in response.text
     assert f"/api/raw-artifacts/{raw_artifact.id}/download" in response.text
+    assert "Danger Zone" not in response.text
+
+
+def test_session_detail_page_shows_delete_control_only_for_terminal_sessions(db_session) -> None:
+    client = _client_with_db(db_session)
+
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "terminal-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "yard",
+        },
+    ).json()["id"]
+
+    response = client.get(f"/sessions/{session_id}")
+    assert response.status_code == 200
+    assert "Danger Zone" not in response.text
+
+    session = db_session.get(SessionModel, session_id)
+    assert session is not None
+    session.status = "failed"
+    db_session.commit()
+
+    response = client.get(f"/sessions/{session_id}")
+
+    assert response.status_code == 200
+    assert "Danger Zone" in response.text
+    assert f'action="/sessions/{session_id}/delete"' in response.text
 
 
 def test_session_build_form_forces_packet_detail_for_high_altitude_cc(db_session, monkeypatch) -> None:
@@ -1186,6 +1222,269 @@ def test_upload_raw_artifact_sanitizes_path_like_filename(db_session, monkeypatc
     payload = response.json()
     assert payload["storage_path"] == f"raw/{session_id}/TX/capture.log"
     assert (settings.data_dir / payload["storage_path"]).read_bytes() == b"log-data"
+
+
+@pytest.mark.parametrize(
+    ("artifact_type", "role", "filename", "expected_suffix"),
+    [
+        (RawArtifactType.AGENT_EVENT_LOG.value, "TX", "ignored.jsonl", "raw/{session_id}/TX/agent_events.jsonl"),
+        (RawArtifactType.TIMING_SAMPLES.value, "TX", "ignored.json", "raw/{session_id}/TX/timing_samples.json"),
+        (RawArtifactType.PARSER_OUTPUT.value, "", "ignored.json", "reports/{session_id}/parser_output.json"),
+    ],
+)
+def test_upload_raw_artifact_uses_canonical_paths_and_upserts_singletons(
+    db_session,
+    monkeypatch,
+    tmp_path,
+    artifact_type: str,
+    role: str,
+    filename: str,
+    expected_suffix: str,
+) -> None:
+    settings = ServerSettings(data_dir=tmp_path / "server_data")
+    client = _client_with_db_and_settings(db_session, monkeypatch, settings)
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "canonical-raw-upload-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+
+    for payload_bytes in (b"first", b"second"):
+        response = client.post(
+            "/api/agent/raw-artifacts/upload",
+            data={
+                "session_id": session_id,
+                "artifact_type": artifact_type,
+                "role": role,
+            },
+            files={"file": (filename, payload_bytes, "application/octet-stream")},
+        )
+        assert response.status_code == 200
+
+    expected_path = expected_suffix.format(session_id=session_id)
+    rows = (
+        db_session.query(RawArtifact)
+        .filter(RawArtifact.session_id == session_id, RawArtifact.type == artifact_type)
+        .all()
+    )
+
+    assert len(rows) == 1
+    assert rows[0].storage_path == expected_path
+    assert (settings.data_dir / expected_path).read_bytes() == b"second"
+
+
+def test_upload_capture_command_log_is_listed_and_downloadable(db_session, monkeypatch, tmp_path) -> None:
+    settings = ServerSettings(data_dir=tmp_path / "server_data")
+    client = _client_with_db_and_settings(db_session, monkeypatch, settings)
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "capture-command-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+
+    response = client.post(
+        "/api/agent/raw-artifacts/upload",
+        data={
+            "session_id": session_id,
+            "artifact_type": RawArtifactType.CAPTURE_COMMAND_LOG.value,
+            "role": "RX",
+        },
+        files={"file": ("capture-command.log", b"capture output", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["storage_path"] == f"raw/{session_id}/RX/capture_command.log"
+
+    listing = client.get(f"/api/sessions/{session_id}/raw-artifacts")
+    download = client.get(f"/api/raw-artifacts/{payload['raw_artifact_id']}/download")
+
+    assert listing.status_code == 200
+    assert listing.json() == [
+        {
+            "id": payload["raw_artifact_id"],
+            "type": RawArtifactType.CAPTURE_COMMAND_LOG.value,
+            "role": "RX",
+            "storage_path": f"raw/{session_id}/RX/capture_command.log",
+            "size_bytes": len(b"capture output"),
+        }
+    ]
+    assert download.status_code == 200
+    assert download.content == b"capture output"
+
+
+def test_terminal_artifact_cleanup_removes_bundle_files_but_keeps_raw_logs_and_reports(
+    db_session, tmp_path
+) -> None:
+    settings = ServerSettings(data_dir=tmp_path / "server_data")
+    storage = FileStorage(settings.data_dir)
+    session = SessionModel(
+        name="cleanup-session",
+        status="report_ready",
+        stop_mode="default_duration",
+    )
+    db_session.add(session)
+    db_session.commit()
+    db_session.refresh(session)
+
+    artifact_path = storage.resolve(f"artifacts/{session.id}/artifact-1/bundle.zip")
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_bytes(b"bundle")
+    raw_path = storage.resolve(f"raw/{session.id}/TX/rtt.log")
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_path.write_text("raw", encoding="utf-8")
+    report_path = storage.resolve(f"reports/{session.id}/report.html")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text("<html></html>", encoding="utf-8")
+
+    artifact = Artifact(
+        session_id=session.id,
+        status="ready",
+        origin_type="manual_upload",
+        storage_path=f"artifacts/{session.id}/artifact-1/bundle.zip",
+    )
+    raw_artifact = RawArtifact(
+        session_id=session.id,
+        role="TX",
+        type=RawArtifactType.RTT_LOG.value,
+        storage_path=f"raw/{session.id}/TX/rtt.log",
+        hash_sha256="raw-sha",
+        size_bytes=3,
+        metadata_json={},
+    )
+    report = Report(
+        session_id=session.id,
+        status="ready",
+        html_storage_path=f"reports/{session.id}/report.html",
+        diagnostics_json={"status": "ready"},
+    )
+    db_session.add_all([artifact, raw_artifact, report])
+    db_session.commit()
+
+    removed = cleanup_terminal_artifact_bundles(db_session, settings=settings, session_id=session.id)
+    db_session.refresh(artifact)
+
+    assert removed == [f"artifacts/{session.id}/artifact-1/bundle.zip"]
+    assert artifact.storage_path is None
+    assert not artifact_path.exists()
+    assert raw_path.exists()
+    assert report_path.exists()
+
+
+def test_delete_session_json_removes_terminal_session_rows_and_files(db_session, monkeypatch, tmp_path) -> None:
+    settings = ServerSettings(data_dir=tmp_path / "server_data")
+    client = _client_with_db_and_settings(db_session, monkeypatch, settings)
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "delete-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+
+    session = db_session.get(SessionModel, session_id)
+    assert session is not None
+    session.status = "failed"
+    db_session.commit()
+
+    storage = FileStorage(settings.data_dir)
+    artifact_path = f"artifacts/{session_id}/artifact-1/bundle.zip"
+    raw_path = f"raw/{session_id}/TX/rtt.log"
+    report_path = f"reports/{session_id}/report.html"
+    for relative_path, content in (
+        (artifact_path, b"bundle"),
+        (raw_path, b"raw"),
+        (report_path, b"<html></html>"),
+    ):
+        path = storage.resolve(relative_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
+    db_session.add_all(
+        [
+            Artifact(
+                session_id=session_id,
+                status="ready",
+                origin_type="manual_upload",
+                storage_path=artifact_path,
+            ),
+            RawArtifact(
+                session_id=session_id,
+                role="TX",
+                type=RawArtifactType.RTT_LOG.value,
+                storage_path=raw_path,
+                hash_sha256="raw-sha",
+                size_bytes=3,
+                metadata_json={},
+            ),
+            RawArtifact(
+                session_id=session_id,
+                role="TX",
+                type=RawArtifactType.RTT_LOG.value,
+                storage_path=raw_path,
+                hash_sha256="raw-sha-duplicate",
+                size_bytes=3,
+                metadata_json={"duplicate": True},
+            ),
+            Report(
+                session_id=session_id,
+                status="ready",
+                html_storage_path=report_path,
+                diagnostics_json={"status": "ready"},
+            ),
+            Job(
+                session_id=session_id,
+                agent_id="agent-1",
+                type="prepare_role",
+                status="completed",
+                payload_json={},
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.delete(f"/api/sessions/{session_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "deleted", "id": session_id}
+    db_session.expire_all()
+    assert db_session.get(SessionModel, session_id) is None
+    assert db_session.query(Artifact).filter(Artifact.session_id == session_id).count() == 0
+    assert db_session.query(RawArtifact).filter(RawArtifact.session_id == session_id).count() == 0
+    assert db_session.query(Report).filter(Report.session_id == session_id).count() == 0
+    assert db_session.query(Job).filter(Job.session_id == session_id).count() == 0
+    assert not storage.resolve(artifact_path).exists()
+    assert not storage.resolve(raw_path).exists()
+    assert not storage.resolve(report_path).exists()
+
+
+def test_delete_session_json_rejects_non_terminal_sessions(db_session, monkeypatch, tmp_path) -> None:
+    settings = ServerSettings(data_dir=tmp_path / "server_data")
+    client = _client_with_db_and_settings(db_session, monkeypatch, settings)
+    session_id = client.post(
+        "/api/sessions",
+        json={
+            "name": "active-delete-session",
+            "stop_mode": "default_duration",
+            "location_mode": "manual",
+            "location_text": "field",
+        },
+    ).json()["id"]
+
+    response = client.delete(f"/api/sessions/{session_id}")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "only terminal sessions can be deleted"
 
 
 def test_upload_artifact_rejects_invalid_bundle(db_session, monkeypatch, tmp_path) -> None:

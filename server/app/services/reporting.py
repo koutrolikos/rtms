@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from server.app.models.entities import AgentHost, Report, Session as SessionModel
 from server.app.presentation import register_template_helpers
 from server.app.services.parsing import emit_parser_output, merge_session_logs
+from server.app.services.sessions import cleanup_terminal_artifact_bundles
 from server.app.services.sessions import raw_artifacts as list_raw_artifacts
 from server.app.services.sessions import register_raw_artifact, session_events, session_report, session_roles
 from shared.enums import RawArtifactType, ReportStatus, SessionState
@@ -90,6 +91,11 @@ def generate_report(
     if session.status == SessionState.MERGING.value:
         session.status = transition_session(SessionState(session.status), SessionState.REPORT_READY).value
     db.commit()
+    cleanup_terminal_artifact_bundles(
+        db,
+        storage_root=storage_root,
+        session_id=session.id,
+    )
     db.refresh(existing)
     return existing
 

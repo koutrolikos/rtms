@@ -66,6 +66,20 @@ class AgentSettings(BaseModel):
             raise ValueError(
                 "RANGE_TEST_SERVER_USERNAME and RANGE_TEST_SERVER_PASSWORD must either both be set or both be empty"
             )
+        default_roots = {
+            "repo_workspace_root": Path("agent_data/repos"),
+            "downloads_root": Path("agent_data/downloads"),
+            "sessions_root": Path("agent_data/sessions"),
+            "build_root": Path("agent_data/builds"),
+        }
+        if self.repo_workspace_root == default_roots["repo_workspace_root"]:
+            self.repo_workspace_root = self.data_dir / "repos"
+        if self.downloads_root == default_roots["downloads_root"]:
+            self.downloads_root = self.data_dir / "downloads"
+        if self.sessions_root == default_roots["sessions_root"]:
+            self.sessions_root = self.data_dir / "sessions"
+        if self.build_root == default_roots["build_root"]:
+            self.build_root = self.data_dir / "builds"
         return self
 
     @property

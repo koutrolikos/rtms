@@ -155,6 +155,19 @@ class ServerClient:
         )
         response.raise_for_status()
 
+    def get_session_status(self, session_id: str) -> dict[str, Any] | None:
+        try:
+            response = self.client.get(f"{self.server_url}/api/sessions/{session_id}")
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+            raise describe_connect_error(self.server_url, exc) from exc
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"unexpected session status payload for {session_id!r}")
+        return payload
+
     def upload_artifact_bundle(
         self,
         *,
