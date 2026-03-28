@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from agent.app.services.high_altitude_cc_build import (
+from rtms.host.app.services.high_altitude_cc_build import (
     HighAltitudeCCBuildError,
     patch_app_config_defaults,
 )
-from shared.schemas import HighAltitudeCCBuildConfig
+from rtms.shared.schemas import HighAltitudeCCBuildConfig
 
 
 def test_patch_app_config_defaults_updates_role_and_debug(tmp_path: Path) -> None:

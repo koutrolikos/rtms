@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rf-range-test-mvp"
+name = "rtms"
 version = "0.1.0"
-description = "Distributed RF range-test orchestration MVP with central server and remote agents."
+description = "Distributed RF range-test orchestration MVP with a central server and remote hosts."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -24,29 +24,14 @@ dev = [
 ]
 
 [project.scripts]
-range-test-server = "server.app.main:run"
-range-test-agent = "agent.app.cli.main:main"
+rtms-server = "rtms.server.app.main:run"
+rtms-host = "rtms.host.app.cli.main:main"
 
 [tool.setuptools]
-packages = [
-  "shared",
-  "server",
-  "server.app",
-  "server.app.api",
-  "server.app.core",
-  "server.app.db",
-  "server.app.models",
-  "server.app.repositories",
-  "server.app.services",
-  "agent",
-  "agent.app",
-  "agent.app.cli",
-  "agent.app.core",
-  "agent.app.executors",
-  "agent.app.services",
-  "agent.app.storage",
-]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["rtms*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-

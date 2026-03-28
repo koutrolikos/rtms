@@ -8,7 +8,8 @@ __pycache__/
 .DS_Store
 server_data/
 agent_data/
+host_data/
+*.egg-info/
 dist/
 build/
 htmlcov/
-

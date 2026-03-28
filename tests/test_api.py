@@ -8,19 +8,19 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from agent.app.services.api_client import (
+from rtms.host.app.services.api_client import (
     ServerConnectionError,
     describe_connect_error,
     validate_server_url,
 )
-from server.app.core.config import ServerSettings
-from server.app.db.session import get_db
-from server.app.main import create_app
-from server.app.models.entities import AgentHost, Artifact, Job, RawArtifact, Report, Session as SessionModel
-from server.app.services.sessions import cleanup_terminal_artifact_bundles
-from server.app.services.storage import FileStorage
-from shared.enums import RawArtifactType
-from shared.schemas import BuildRecipe, ConfiguredRepo
+from rtms.server.app.core.config import ServerSettings
+from rtms.server.app.db.session import get_db
+from rtms.server.app.main import create_app
+from rtms.server.app.models.entities import Host, Artifact, Job, RawArtifact, Report, RunSession
+from rtms.server.app.services.sessions import cleanup_terminal_artifact_bundles
+from rtms.server.app.services.storage import FileStorage
+from rtms.shared.enums import RawArtifactType
+from rtms.shared.schemas import BuildRecipe, ConfiguredRepo
 
 
 APP_CONFIG_SAMPLE = """
@@ -69,7 +69,7 @@ def _high_altitude_cc_repo() -> ConfiguredRepo:
         clone_url="https://github.com/koutrolikos/High-Altitude-CC.git",
         default_branch="dev",
         build_recipe=BuildRecipe(
-            build_command="range-test-agent build-high-altitude-cc --source . --build-dir build/debug",
+            build_command="rtms-host build-high-altitude-cc --source . --build-dir build/debug",
             artifact_globs=[
                 "build/debug/HighAltitudeCC.elf",
                 "build/debug/HighAltitudeCC.hex",
@@ -122,9 +122,9 @@ def _client_with_db(db_session) -> TestClient:
 
 
 def _client_with_db_and_settings(db_session, monkeypatch, settings: ServerSettings) -> TestClient:
-    monkeypatch.setattr("server.app.main.get_settings", lambda: settings)
-    monkeypatch.setattr("server.app.api.agent.get_settings", lambda: settings)
-    monkeypatch.setattr("server.app.api.operator.get_settings", lambda: settings)
+    monkeypatch.setattr("rtms.server.app.main.get_settings", lambda: settings)
+    monkeypatch.setattr("rtms.server.app.api.host.get_settings", lambda: settings)
+    monkeypatch.setattr("rtms.server.app.api.operator.get_settings", lambda: settings)
     app = create_app()
 
     def override_get_db():
@@ -195,21 +195,21 @@ def test_home_redirects_to_sessions(db_session) -> None:
 def test_sessions_page_groups_search_filters_and_quick_actions(db_session) -> None:
     client = _client_with_db(db_session)
 
-    active_session = SessionModel(
+    active_session = RunSession(
         name="Alpha Active",
         status="capturing",
         stop_mode="default_duration",
         location_mode="manual",
         location_text="ridge",
     )
-    failed_session = SessionModel(
+    failed_session = RunSession(
         name="Bravo Failed",
         status="failed",
         stop_mode="default_duration",
         location_mode="manual",
         location_text="tree line",
     )
-    completed_session = SessionModel(
+    completed_session = RunSession(
         name="Charlie Complete",
         status="report_ready",
         stop_mode="default_duration",
@@ -225,7 +225,7 @@ def test_sessions_page_groups_search_filters_and_quick_actions(db_session) -> No
             session_id=completed_session.id,
             status="ready",
             html_storage_path=f"reports/{completed_session.id}/report.html",
-            diagnostics_json={"status": "ready"},
+            diagnostics={"status": "ready"},
         )
     )
     db_session.add(
@@ -236,7 +236,7 @@ def test_sessions_page_groups_search_filters_and_quick_actions(db_session) -> No
             storage_path=f"reports/{completed_session.id}/parser_output.json",
             hash_sha256="hash",
             size_bytes=42,
-            metadata_json={"generated": True},
+            metadata_payload={"generated": True},
         )
     )
     db_session.commit()
@@ -264,7 +264,7 @@ def test_sessions_page_groups_search_filters_and_quick_actions(db_session) -> No
     assert f'action="/sessions/{active_session.id}/delete"' not in response.text
 
 
-def test_hosts_page_after_agent_register(db_session) -> None:
+def test_hosts_page_after_host_register(db_session) -> None:
     app = create_app()
 
     def override_get_db():
@@ -273,10 +273,10 @@ def test_hosts_page_after_agent_register(db_session) -> None:
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
     response = client.post(
-        "/api/agent/register",
+        "/api/host/register",
         json={
-            "name": "agent-1",
-            "label": "Bench Agent",
+            "name": "host-1",
+            "label": "Bench Host",
             "hostname": "bench-host",
             "capabilities": {
                 "build_capable": True,
@@ -292,7 +292,7 @@ def test_hosts_page_after_agent_register(db_session) -> None:
     assert response.status_code == 200
     hosts_page = client.get("/hosts")
     assert hosts_page.status_code == 200
-    assert "Bench Agent" in hosts_page.text
+    assert "Bench Host" in hosts_page.text
     assert "Build" in hosts_page.text
     assert "build_capable" not in hosts_page.text
     assert 'data-copy-label="public url"' in hosts_page.text
@@ -302,10 +302,10 @@ def test_hosts_fragment_returns_refreshable_shell_and_markers(db_session) -> Non
     client = _client_with_db(db_session)
 
     register_response = client.post(
-        "/api/agent/register",
+        "/api/host/register",
         json={
-            "name": "agent-fragment",
-            "label": "Fragment Agent",
+            "name": "host-fragment",
+            "label": "Fragment Host",
             "hostname": "fragment-host",
             "capabilities": {
                 "build_capable": True,
@@ -329,15 +329,15 @@ def test_hosts_fragment_returns_refreshable_shell_and_markers(db_session) -> Non
     assert "Recent Sessions" in fragment.text
 
 
-def test_start_session_uses_public_base_url_for_agent_downloads(db_session, monkeypatch) -> None:
+def test_start_session_uses_public_base_url_for_host_downloads(db_session, monkeypatch) -> None:
     app = create_app()
 
     def override_get_db():
         yield db_session
 
     settings = ServerSettings(public_base_url="http://172.20.10.3:8000")
-    monkeypatch.setattr("server.app.api.operator.get_settings", lambda: settings)
-    monkeypatch.setattr("server.app.db.session.get_settings", lambda: settings)
+    monkeypatch.setattr("rtms.server.app.api.operator.get_settings", lambda: settings)
+    monkeypatch.setattr("rtms.server.app.db.session.get_settings", lambda: settings)
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
 
@@ -369,7 +369,7 @@ def test_start_session_uses_public_base_url_for_agent_downloads(db_session, monk
 
     client.post(
         f"/api/sessions/{session_id}/hosts",
-        json={"tx_agent_id": "agent-tx", "rx_agent_id": "agent-rx"},
+        json={"tx_host_id": "host-tx", "rx_host_id": "host-rx"},
     )
     client.post(
         f"/api/sessions/{session_id}/artifacts/assign",
@@ -385,7 +385,7 @@ def test_start_session_uses_public_base_url_for_agent_downloads(db_session, monk
     jobs = db_session.query(Job).filter(Job.session_id == session_id).all()
     assert len(jobs) == 2
     assert all(
-        job.payload_json["artifact_download_url"].startswith("http://172.20.10.3:8000/api/artifacts/")
+        job.payload["artifact_download_url"].startswith("http://172.20.10.3:8000/api/artifacts/")
         for job in jobs
     )
 
@@ -427,7 +427,7 @@ def test_auth_requires_credentials_when_enabled(db_session, monkeypatch) -> None
     assert authenticated.status_code == 200
 
 
-def test_agent_register_requires_credentials_when_auth_enabled(db_session, monkeypatch) -> None:
+def test_host_register_requires_credentials_when_auth_enabled(db_session, monkeypatch) -> None:
     settings = ServerSettings(
         public_base_url="http://172.20.10.3:8000",
         auth_username="operator",
@@ -435,9 +435,9 @@ def test_agent_register_requires_credentials_when_auth_enabled(db_session, monke
     )
     client = _client_with_db_and_settings(db_session, monkeypatch, settings)
     payload = {
-        "name": "agent-auth",
-        "label": "Auth Agent",
-        "hostname": "agent-auth.local",
+        "name": "host-auth",
+        "label": "Auth Host",
+        "hostname": "host-auth.local",
         "capabilities": {
             "build_capable": True,
             "flash_capable": True,
@@ -449,16 +449,16 @@ def test_agent_register_requires_credentials_when_auth_enabled(db_session, monke
         "software_version": "0.1.0",
     }
 
-    unauthenticated = client.post("/api/agent/register", json=payload)
+    unauthenticated = client.post("/api/host/register", json=payload)
     assert unauthenticated.status_code == 401
 
     authenticated = client.post(
-        "/api/agent/register",
+        "/api/host/register",
         json=payload,
         headers=_basic_auth_headers("operator", "secret"),
     )
     assert authenticated.status_code == 200
-    assert authenticated.json()["agent_id"]
+    assert authenticated.json()["host_id"]
 
 
 def test_validate_server_url_allows_localhost_for_same_machine_dev() -> None:
@@ -498,7 +498,7 @@ def test_repo_build_config_endpoint_parses_high_altitude_cc_defaults(db_session,
     def override_get_db():
         yield db_session
 
-    monkeypatch.setattr("server.app.api.operator._github", lambda: FakeGitHubService())
+    monkeypatch.setattr("rtms.server.app.api.operator._github", lambda: FakeGitHubService())
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
 
@@ -521,7 +521,7 @@ def test_request_build_json_stores_high_altitude_cc_build_config_and_payload(
     def override_get_db():
         yield db_session
 
-    monkeypatch.setattr("server.app.api.operator._github", lambda: FakeGitHubService())
+    monkeypatch.setattr("rtms.server.app.api.operator._github", lambda: FakeGitHubService())
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
 
@@ -543,7 +543,7 @@ def test_request_build_json_stores_high_altitude_cc_build_config_and_payload(
             "role": "TX",
             "repo_id": "high-altitude-cc",
             "git_sha": "deadbeefcafebabe",
-            "build_agent_id": "agent-build",
+            "build_host_id": "host-build",
             "build_config": {
                 "machine_log_detail": 1,
                 "machine_log_stat_period_ms": 5000,
@@ -557,10 +557,10 @@ def test_request_build_json_stores_high_altitude_cc_build_config_and_payload(
     job = db_session.get(Job, payload["job_id"])
     assert artifact is not None
     assert job is not None
-    assert artifact.metadata_json["auto_assign_role"] == "TX"
-    assert artifact.metadata_json["requested_build_config"]["machine_log_detail"] == 1
+    assert artifact.metadata_payload["auto_assign_role"] == "TX"
+    assert artifact.metadata_payload["requested_build_config"]["machine_log_detail"] == 1
     assert job.role == "TX"
-    assert job.payload_json["build_config"]["machine_log_stat_period_ms"] == 5000
+    assert job.payload["build_config"]["machine_log_stat_period_ms"] == 5000
 
 
 def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
@@ -571,7 +571,7 @@ def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
     def override_get_db():
         yield db_session
 
-    monkeypatch.setattr("server.app.api.operator._github", lambda: FakeGitHubService())
+    monkeypatch.setattr("rtms.server.app.api.operator._github", lambda: FakeGitHubService())
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
 
@@ -592,8 +592,10 @@ def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
         origin_type="github_build",
         source_repo="koutrolikos/High-Altitude-CC",
         git_sha="deadbeef",
-        role_compatibility_json=["TX"],
-        metadata_json={"requested_build_config": {"machine_log_detail": 1, "machine_log_stat_period_ms": 5000}},
+        role_compatibility=["TX"],
+        metadata_payload={
+            "requested_build_config": {"machine_log_detail": 1, "machine_log_stat_period_ms": 5000}
+        },
         storage_path="artifacts/session-id/artifact-id/bundle.zip",
     )
     raw_artifact = RawArtifact(
@@ -603,7 +605,7 @@ def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
         storage_path="raw/session-id/TX/build.log",
         hash_sha256="abc123",
         size_bytes=128,
-        metadata_json={"stage": "build"},
+        metadata_payload={"stage": "build"},
     )
     db_session.add_all([artifact, raw_artifact])
     db_session.commit()
@@ -659,7 +661,7 @@ def test_session_detail_page_shows_delete_control_only_for_terminal_sessions(db_
     assert response.status_code == 200
     assert "Danger Zone" not in response.text
 
-    session = db_session.get(SessionModel, session_id)
+    session = db_session.get(RunSession, session_id)
     assert session is not None
     session.status = "failed"
     db_session.commit()
@@ -677,7 +679,7 @@ def test_session_build_form_forces_packet_detail_for_high_altitude_cc(db_session
     def override_get_db():
         yield db_session
 
-    monkeypatch.setattr("server.app.api.operator._github", lambda: FakeGitHubService())
+    monkeypatch.setattr("rtms.server.app.api.operator._github", lambda: FakeGitHubService())
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
 
@@ -697,7 +699,7 @@ def test_session_build_form_forces_packet_detail_for_high_altitude_cc(db_session
         data={
             "repo_id": "high-altitude-cc",
             "git_sha": "deadbeefcafebabe",
-            "build_agent_id": "agent-build",
+            "build_host_id": "host-build",
             "role": "TX",
             "build_config_json": '{"machine_log_detail":0,"machine_log_stat_period_ms":5000}',
         },
@@ -707,16 +709,16 @@ def test_session_build_form_forces_packet_detail_for_high_altitude_cc(db_session
     assert response.status_code == 303
     artifact = db_session.query(Artifact).filter(Artifact.session_id == session_id).one()
     job = db_session.query(Job).filter(Job.session_id == session_id).one()
-    assert artifact.metadata_json["requested_build_config"]["machine_log_detail"] == 1
-    assert artifact.metadata_json["requested_build_config"]["machine_log_stat_period_ms"] == 5000
-    assert job.payload_json["build_config"]["machine_log_detail"] == 1
-    assert job.payload_json["build_config"]["machine_log_stat_period_ms"] == 5000
+    assert artifact.metadata_payload["requested_build_config"]["machine_log_detail"] == 1
+    assert artifact.metadata_payload["requested_build_config"]["machine_log_stat_period_ms"] == 5000
+    assert job.payload["build_config"]["machine_log_detail"] == 1
+    assert job.payload["build_config"]["machine_log_stat_period_ms"] == 5000
 
 
 def test_session_detail_page_hides_existing_artifact_assignment_when_no_ready_artifacts(
     db_session, monkeypatch
 ) -> None:
-    monkeypatch.setattr("server.app.api.operator._github", lambda: FakeGitHubService())
+    monkeypatch.setattr("rtms.server.app.api.operator._github", lambda: FakeGitHubService())
     client = _client_with_db(db_session)
 
     session_response = client.post(
@@ -744,7 +746,7 @@ def test_session_detail_page_hides_existing_artifact_assignment_when_no_ready_ar
 def test_session_detail_page_marks_run_stage_active_once_setup_and_artifacts_are_ready(
     db_session, monkeypatch
 ) -> None:
-    monkeypatch.setattr("server.app.api.operator._github", lambda: EmptyGitHubService())
+    monkeypatch.setattr("rtms.server.app.api.operator._github", lambda: EmptyGitHubService())
     client = _client_with_db(db_session)
 
     session_response = client.post(
@@ -758,20 +760,20 @@ def test_session_detail_page_marks_run_stage_active_once_setup_and_artifacts_are
     )
     session_id = session_response.json()["id"]
 
-    tx_host = AgentHost(name="tx-agent", label="TX Agent", hostname="tx.local", status="idle")
-    rx_host = AgentHost(name="rx-agent", label="RX Agent", hostname="rx.local", status="idle")
+    tx_host = Host(name="tx-host", label="TX Host", hostname="tx.local", status="idle")
+    rx_host = Host(name="rx-host", label="RX Host", hostname="rx.local", status="idle")
     tx_artifact = Artifact(
         session_id=session_id,
         status="ready",
         origin_type="manual_upload",
-        role_compatibility_json=["TX"],
+        role_compatibility=["TX"],
         storage_path="artifacts/session-id/tx/bundle.zip",
     )
     rx_artifact = Artifact(
         session_id=session_id,
         status="ready",
         origin_type="manual_upload",
-        role_compatibility_json=["RX"],
+        role_compatibility=["RX"],
         storage_path="artifacts/session-id/rx/bundle.zip",
     )
     db_session.add_all([tx_host, rx_host, tx_artifact, rx_artifact])
@@ -779,7 +781,7 @@ def test_session_detail_page_marks_run_stage_active_once_setup_and_artifacts_are
 
     response = client.post(
         f"/api/sessions/{session_id}/hosts",
-        json={"tx_agent_id": tx_host.id, "rx_agent_id": rx_host.id},
+        json={"tx_host_id": tx_host.id, "rx_host_id": rx_host.id},
     )
     assert response.status_code == 200
 
@@ -829,43 +831,43 @@ def test_session_fragment_returns_refreshable_shell_and_markers(db_session) -> N
 def test_session_detail_next_action_card_covers_major_state_transitions(db_session) -> None:
     client = _client_with_db(db_session)
 
-    tx_host = AgentHost(name="tx-next", label="TX Next", hostname="tx.next", status="idle")
-    rx_host = AgentHost(name="rx-next", label="RX Next", hostname="rx.next", status="idle")
+    tx_host = Host(name="tx-next", label="TX Next", hostname="tx.next", status="idle")
+    rx_host = Host(name="rx-next", label="RX Next", hostname="rx.next", status="idle")
     db_session.add_all([tx_host, rx_host])
     db_session.commit()
 
-    needs_hosts = SessionModel(name="needs-hosts", status="selecting_artifacts", stop_mode="default_duration")
-    needs_artifacts = SessionModel(
+    needs_hosts = RunSession(name="needs-hosts", status="selecting_artifacts", stop_mode="default_duration")
+    needs_artifacts = RunSession(
         name="needs-artifacts",
         status="selecting_artifacts",
         stop_mode="default_duration",
-        tx_agent_id=tx_host.id,
-        rx_agent_id=rx_host.id,
+        tx_host_id=tx_host.id,
+        rx_host_id=rx_host.id,
     )
-    ready_to_start = SessionModel(
+    ready_to_start = RunSession(
         name="ready-to-start",
         status="awaiting_hosts",
         stop_mode="default_duration",
-        tx_agent_id=tx_host.id,
-        rx_agent_id=rx_host.id,
+        tx_host_id=tx_host.id,
+        rx_host_id=rx_host.id,
         tx_artifact_id="tx-artifact",
         rx_artifact_id="rx-artifact",
     )
-    capturing = SessionModel(
+    capturing = RunSession(
         name="capturing-session",
         status="capturing",
         stop_mode="default_duration",
-        tx_agent_id=tx_host.id,
-        rx_agent_id=rx_host.id,
+        tx_host_id=tx_host.id,
+        rx_host_id=rx_host.id,
         tx_artifact_id="tx-artifact",
         rx_artifact_id="rx-artifact",
     )
-    outputs_ready = SessionModel(
+    outputs_ready = RunSession(
         name="outputs-ready",
         status="report_ready",
         stop_mode="default_duration",
-        tx_agent_id=tx_host.id,
-        rx_agent_id=rx_host.id,
+        tx_host_id=tx_host.id,
+        rx_host_id=rx_host.id,
         tx_artifact_id="tx-artifact",
         rx_artifact_id="rx-artifact",
         report_status="ready",
@@ -878,7 +880,7 @@ def test_session_detail_next_action_card_covers_major_state_transitions(db_sessi
             session_id=outputs_ready.id,
             status="ready",
             html_storage_path=f"reports/{outputs_ready.id}/report.html",
-            diagnostics_json={"status": "ready"},
+            diagnostics={"status": "ready"},
         )
     )
     db_session.commit()
@@ -938,7 +940,7 @@ def test_session_live_endpoint_version_changes_when_build_job_finishes(db_sessio
     def override_get_db():
         yield db_session
 
-    monkeypatch.setattr("server.app.api.operator._github", lambda: FakeGitHubService())
+    monkeypatch.setattr("rtms.server.app.api.operator._github", lambda: FakeGitHubService())
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
 
@@ -960,7 +962,7 @@ def test_session_live_endpoint_version_changes_when_build_job_finishes(db_sessio
             "role": "TX",
             "repo_id": "high-altitude-cc",
             "git_sha": "deadbeefcafebabe",
-            "build_agent_id": "agent-build",
+            "build_host_id": "host-build",
             "build_config": {
                 "machine_log_detail": 1,
                 "machine_log_stat_period_ms": 5000,
@@ -975,7 +977,7 @@ def test_session_live_endpoint_version_changes_when_build_job_finishes(db_sessio
     pending_version = pending_live_response.json()["version"]
 
     result_response = client.post(
-        f"/api/agent/jobs/{job_id}/result",
+        f"/api/host/jobs/{job_id}/result",
         json={
             "success": False,
             "failure_reason": "build_failed",
@@ -1003,10 +1005,10 @@ def test_hosts_page_and_live_endpoint_refresh_when_hosts_change(db_session) -> N
     initial_version = initial_live_response.json()["version"]
 
     register_response = client.post(
-        "/api/agent/register",
+        "/api/host/register",
         json={
-            "name": "agent-live",
-            "label": "Field Agent",
+            "name": "host-live",
+            "label": "Field Host",
             "hostname": "field-host",
             "capabilities": {
                 "build_capable": True,
@@ -1065,7 +1067,7 @@ def test_report_page_renders_summaries_without_raw_payload_dumps(db_session) -> 
     assert "RF Link Verdict" in report_page.text
     assert "Packet Type Breakdown" in report_page.text
     assert "Loss Hotspots Over Time" in report_page.text
-    assert "payload_json" not in report_page.text
+    assert "payload" not in report_page.text
     assert 'data-copy-label="session id"' in report_page.text
 
 
@@ -1119,7 +1121,7 @@ def test_storage_rejects_escape_paths(tmp_path) -> None:
 
 def test_request_build_json_rejects_session_id_mismatch(db_session, monkeypatch) -> None:
     client = _client_with_db(db_session)
-    monkeypatch.setattr("server.app.api.operator._github", lambda: FakeGitHubService())
+    monkeypatch.setattr("rtms.server.app.api.operator._github", lambda: FakeGitHubService())
 
     first_session = client.post(
         "/api/sessions",
@@ -1147,7 +1149,7 @@ def test_request_build_json_rejects_session_id_mismatch(db_session, monkeypatch)
             "role": "TX",
             "repo_id": "high-altitude-cc",
             "git_sha": "deadbeef",
-            "build_agent_id": "agent-build",
+            "build_host_id": "host-build",
         },
     )
 
@@ -1157,7 +1159,7 @@ def test_request_build_json_rejects_session_id_mismatch(db_session, monkeypatch)
 
 def test_repo_endpoints_return_404_for_unknown_repo(db_session, monkeypatch) -> None:
     client = _client_with_db(db_session)
-    monkeypatch.setattr("server.app.api.operator._github", lambda: EmptyGitHubService())
+    monkeypatch.setattr("rtms.server.app.api.operator._github", lambda: EmptyGitHubService())
 
     build_config_response = client.get("/api/repos/missing/build-config", params={"git_sha": "deadbeef"})
     commits_response = client.get("/api/repos/missing/commits")
@@ -1182,17 +1184,17 @@ def test_upload_raw_artifact_rejects_invalid_metadata_json(db_session, monkeypat
     ).json()["id"]
 
     response = client.post(
-        "/api/agent/raw-artifacts/upload",
+        "/api/host/raw-artifacts/upload",
         data={
             "session_id": session_id,
             "artifact_type": "other",
-            "metadata_json": "{bad-json",
+            "metadata": "{bad-json",
         },
         files={"file": ("capture.log", b"log-data", "text/plain")},
     )
 
     assert response.status_code == 400
-    assert "invalid metadata_json" in response.json()["detail"]
+    assert "invalid metadata" in response.json()["detail"]
 
 
 def test_upload_raw_artifact_sanitizes_path_like_filename(db_session, monkeypatch, tmp_path) -> None:
@@ -1209,7 +1211,7 @@ def test_upload_raw_artifact_sanitizes_path_like_filename(db_session, monkeypatc
     ).json()["id"]
 
     response = client.post(
-        "/api/agent/raw-artifacts/upload",
+        "/api/host/raw-artifacts/upload",
         data={
             "session_id": session_id,
             "artifact_type": "other",
@@ -1227,7 +1229,7 @@ def test_upload_raw_artifact_sanitizes_path_like_filename(db_session, monkeypatc
 @pytest.mark.parametrize(
     ("artifact_type", "role", "filename", "expected_suffix"),
     [
-        (RawArtifactType.AGENT_EVENT_LOG.value, "TX", "ignored.jsonl", "raw/{session_id}/TX/agent_events.jsonl"),
+        (RawArtifactType.HOST_EVENT_LOG.value, "TX", "ignored.jsonl", "raw/{session_id}/TX/host_events.jsonl"),
         (RawArtifactType.TIMING_SAMPLES.value, "TX", "ignored.json", "raw/{session_id}/TX/timing_samples.json"),
         (RawArtifactType.PARSER_OUTPUT.value, "", "ignored.json", "reports/{session_id}/parser_output.json"),
     ],
@@ -1255,7 +1257,7 @@ def test_upload_raw_artifact_uses_canonical_paths_and_upserts_singletons(
 
     for payload_bytes in (b"first", b"second"):
         response = client.post(
-            "/api/agent/raw-artifacts/upload",
+            "/api/host/raw-artifacts/upload",
             data={
                 "session_id": session_id,
                 "artifact_type": artifact_type,
@@ -1291,7 +1293,7 @@ def test_upload_capture_command_log_is_listed_and_downloadable(db_session, monke
     ).json()["id"]
 
     response = client.post(
-        "/api/agent/raw-artifacts/upload",
+        "/api/host/raw-artifacts/upload",
         data={
             "session_id": session_id,
             "artifact_type": RawArtifactType.CAPTURE_COMMAND_LOG.value,
@@ -1326,7 +1328,7 @@ def test_terminal_artifact_cleanup_removes_bundle_files_but_keeps_raw_logs_and_r
 ) -> None:
     settings = ServerSettings(data_dir=tmp_path / "server_data")
     storage = FileStorage(settings.data_dir)
-    session = SessionModel(
+    session = RunSession(
         name="cleanup-session",
         status="report_ready",
         stop_mode="default_duration",
@@ -1358,13 +1360,13 @@ def test_terminal_artifact_cleanup_removes_bundle_files_but_keeps_raw_logs_and_r
         storage_path=f"raw/{session.id}/TX/rtt.log",
         hash_sha256="raw-sha",
         size_bytes=3,
-        metadata_json={},
+        metadata_payload={},
     )
     report = Report(
         session_id=session.id,
         status="ready",
         html_storage_path=f"reports/{session.id}/report.html",
-        diagnostics_json={"status": "ready"},
+        diagnostics={"status": "ready"},
     )
     db_session.add_all([artifact, raw_artifact, report])
     db_session.commit()
@@ -1392,7 +1394,7 @@ def test_delete_session_json_removes_terminal_session_rows_and_files(db_session,
         },
     ).json()["id"]
 
-    session = db_session.get(SessionModel, session_id)
+    session = db_session.get(RunSession, session_id)
     assert session is not None
     session.status = "failed"
     db_session.commit()
@@ -1425,7 +1427,7 @@ def test_delete_session_json_removes_terminal_session_rows_and_files(db_session,
                 storage_path=raw_path,
                 hash_sha256="raw-sha",
                 size_bytes=3,
-                metadata_json={},
+                metadata_payload={},
             ),
             RawArtifact(
                 session_id=session_id,
@@ -1434,20 +1436,20 @@ def test_delete_session_json_removes_terminal_session_rows_and_files(db_session,
                 storage_path=raw_path,
                 hash_sha256="raw-sha-duplicate",
                 size_bytes=3,
-                metadata_json={"duplicate": True},
+                metadata_payload={"duplicate": True},
             ),
             Report(
                 session_id=session_id,
                 status="ready",
                 html_storage_path=report_path,
-                diagnostics_json={"status": "ready"},
+                diagnostics={"status": "ready"},
             ),
             Job(
                 session_id=session_id,
-                agent_id="agent-1",
+                host_id="host-1",
                 type="prepare_role",
                 status="completed",
-                payload_json={},
+                payload={},
             ),
         ]
     )
@@ -1458,7 +1460,7 @@ def test_delete_session_json_removes_terminal_session_rows_and_files(db_session,
     assert response.status_code == 200
     assert response.json() == {"status": "deleted", "id": session_id}
     db_session.expire_all()
-    assert db_session.get(SessionModel, session_id) is None
+    assert db_session.get(RunSession, session_id) is None
     assert db_session.query(Artifact).filter(Artifact.session_id == session_id).count() == 0
     assert db_session.query(RawArtifact).filter(RawArtifact.session_id == session_id).count() == 0
     assert db_session.query(Report).filter(Report.session_id == session_id).count() == 0
@@ -1501,7 +1503,7 @@ def test_upload_artifact_rejects_invalid_bundle(db_session, monkeypatch, tmp_pat
     ).json()["id"]
 
     response = client.post(
-        "/api/agent/artifacts/upload",
+        "/api/host/artifacts/upload",
         data={"session_id": session_id, "origin_type": "manual_upload", "role_hint": "TX"},
         files={"artifact_bundle": ("bundle.zip", b"not-a-zip", "application/zip")},
     )
@@ -1540,7 +1542,7 @@ def test_upload_artifact_rejects_cross_session_artifact_id(db_session, monkeypat
     db_session.commit()
 
     response = client.post(
-        "/api/agent/artifacts/upload",
+        "/api/host/artifacts/upload",
         data={"session_id": first_session, "artifact_id": foreign_artifact.id},
         files={"artifact_bundle": ("bundle.zip", _bundle_bytes(session_id=first_session), "application/zip")},
     )

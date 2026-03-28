@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ session.name }}{% endblock %}
+{% block content %}
+{% set setup_ready = session.tx_host_id and session.rx_host_id %}
+{% set artifacts_ready = session.tx_artifact_id and session.rx_artifact_id %}
+{% set report_ready = report and report.html_storage_path %}
+{% set stage = namespace(active_id="stage-configure") %}
+{% if setup_ready %}
+  {% if report_ready or session.status == "report_ready" %}
+    {% set stage.active_id = "stage-outputs" %}
+  {% elif not artifacts_ready or session.status in ["draft", "selecting_artifacts", "building_artifacts"] %}
+    {% set stage.active_id = "stage-artifacts" %}
+  {% else %}
+    {% set stage.active_id = "stage-run" %}
+  {% endif %}
+{% endif %}
+<section
+  class="session-screen"
+  data-auto-refresh-url="/sessions/{{ session.id }}/live"
+  data-auto-refresh-fragment-url="/sessions/{{ session.id }}/fragment"
+  data-auto-refresh-target-id="session-live-shell"
+  data-auto-refresh-init="rtmsInitSessionScreen"
+  data-auto-refresh-version="{{ live_version }}"
+  data-auto-refresh-interval-ms="2500"
+  data-stage-storage-key="session-stage:{{ session.id }}"
+  data-active-stage-id="{{ stage.active_id }}"
+  data-active-stage-storage-key="session-active-stage:{{ session.id }}"
+  data-build-storage-key="session-build:{{ session.id }}"
+>
+  {% include "session_detail_fragment.html" %}
+</section>
+<script src="/static/session_detail/pipeline.js?v=20260328a"></script>
+<script src="/static/session_detail/build_form.js?v=20260328a"></script>
+<script src="/static/session_detail.js?v=20260328a"></script>
+{% endblock %}

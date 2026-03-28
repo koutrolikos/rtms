@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from agent.app.core.config import AgentSettings
-from agent.app.executors.build import BuildExecutor, BuildFailure
-from shared.enums import ArtifactOriginType, RawArtifactType, Role
-from shared.manifest import ArtifactBundleManifest, BundleFileEntry, FlashSpec
-from shared.schemas import (
+from rtms.host.app.core.config import HostSettings
+from rtms.host.app.executors.build import BuildExecutor, BuildFailure
+from rtms.shared.enums import ArtifactOriginType, RawArtifactType, Role
+from rtms.shared.manifest import ArtifactBundleManifest, BundleFileEntry, FlashSpec
+from rtms.shared.schemas import (
     ArtifactUploadResult,
     BuildArtifactPayload,
     BuildRecipe,
@@ -15,11 +15,11 @@ from shared.schemas import (
     HighAltitudeCCBuildConfig,
     RawArtifactUploadResult,
 )
-from shared.time_sync import utc_now
+from rtms.shared.time_sync import utc_now
 
 
 def test_clone_url_uses_github_token_for_https_private_repo() -> None:
-    executor = BuildExecutor(AgentSettings(github_token="secret-token"))
+    executor = BuildExecutor(HostSettings(github_token="secret-token"))
     authed = executor._clone_url_with_auth("https://github.com/koutrolikos/High-Altitude-CC.git")
     assert "x-access-token:secret-token@" in authed
     redacted = executor._redact_clone_url(authed)
@@ -28,14 +28,14 @@ def test_clone_url_uses_github_token_for_https_private_repo() -> None:
 
 
 def test_clone_url_keeps_plain_url_when_no_token() -> None:
-    executor = BuildExecutor(AgentSettings())
+    executor = BuildExecutor(HostSettings())
     clone_url = "https://github.com/koutrolikos/High-Altitude-CC.git"
     assert executor._clone_url_with_auth(clone_url) == clone_url
 
 
 def test_prepare_repo_root_archives_stale_non_git_workspace(tmp_path: Path) -> None:
-    executor = BuildExecutor(AgentSettings())
-    repo_root = tmp_path / "agent_data" / "repos" / "high-altitude-cc-rx-debug"
+    executor = BuildExecutor(HostSettings())
+    repo_root = tmp_path / "host_data" / "repos" / "high-altitude-cc-rx-debug"
     repo_root.mkdir(parents=True)
     (repo_root / "partial-file.txt").write_text("partial clone", encoding="utf-8")
 
@@ -48,8 +48,8 @@ def test_prepare_repo_root_archives_stale_non_git_workspace(tmp_path: Path) -> N
 
 
 def test_prepare_repo_root_keeps_existing_git_workspace(tmp_path: Path) -> None:
-    executor = BuildExecutor(AgentSettings())
-    repo_root = tmp_path / "agent_data" / "repos" / "high-altitude-cc-rx-debug"
+    executor = BuildExecutor(HostSettings())
+    repo_root = tmp_path / "host_data" / "repos" / "high-altitude-cc-rx-debug"
     (repo_root / ".git").mkdir(parents=True)
 
     archived = executor._prepare_repo_root(repo_root)
@@ -59,8 +59,8 @@ def test_prepare_repo_root_keeps_existing_git_workspace(tmp_path: Path) -> None:
 
 
 def test_checkout_uses_default_branch_before_requested_ref(tmp_path: Path) -> None:
-    executor = BuildExecutor(AgentSettings(github_token="secret-token"))
-    repo_root = tmp_path / "agent_data" / "repos" / "high-altitude-cc-rx-debug"
+    executor = BuildExecutor(HostSettings(github_token="secret-token"))
+    repo_root = tmp_path / "host_data" / "repos" / "high-altitude-cc-rx-debug"
     commands: list[tuple[str, str | None]] = []
 
     def fake_run_command(
@@ -98,7 +98,7 @@ def test_checkout_uses_default_branch_before_requested_ref(tmp_path: Path) -> No
 
 
 def test_preflight_command_inputs_reports_missing_makefile(tmp_path: Path) -> None:
-    executor = BuildExecutor(AgentSettings())
+    executor = BuildExecutor(HostSettings())
     build_dir = tmp_path / "repo"
     build_dir.mkdir()
 
@@ -116,7 +116,7 @@ def test_preflight_command_inputs_reports_missing_makefile(tmp_path: Path) -> No
 
 
 def test_run_command_timeout_raises_specific_build_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    executor = BuildExecutor(AgentSettings())
+    executor = BuildExecutor(HostSettings())
     log_path = tmp_path / "build.log"
 
     def fake_run(*args, **kwargs):
@@ -127,7 +127,7 @@ def test_run_command_timeout_raises_specific_build_failure(tmp_path: Path, monke
             stderr="partial stderr",
         )
 
-    monkeypatch.setattr("agent.app.executors.build.subprocess.run", fake_run)
+    monkeypatch.setattr("rtms.host.app.executors.build.subprocess.run", fake_run)
 
     with pytest.raises(BuildFailure) as exc_info:
         executor._run_command("sleep 10", cwd=tmp_path, timeout_seconds=1, log_path=log_path)
@@ -152,7 +152,7 @@ def _high_altitude_cc_payload() -> BuildArtifactPayload:
             clone_url="https://github.com/koutrolikos/High-Altitude-CC.git",
             default_branch="dev",
             build_recipe=BuildRecipe(
-                build_command="range-test-agent build-high-altitude-cc --source . --build-dir build/debug",
+                build_command="rtms-host build-high-altitude-cc --source . --build-dir build/debug",
                 artifact_globs=[
                     "build/debug/HighAltitudeCC.elf",
                     "build/debug/HighAltitudeCC.hex",
@@ -174,11 +174,11 @@ def _high_altitude_cc_payload() -> BuildArtifactPayload:
 
 
 def test_resolve_build_command_adds_high_altitude_cc_cdefs() -> None:
-    executor = BuildExecutor(AgentSettings())
+    executor = BuildExecutor(HostSettings())
 
     command, cdefs = executor._resolve_build_command(_high_altitude_cc_payload())
 
-    assert command.startswith("range-test-agent build-high-altitude-cc --source . --build-dir build/debug --role rx --build-config-json ")
+    assert command.startswith("rtms-host build-high-altitude-cc --source . --build-dir build/debug --role rx --build-config-json ")
     assert "-DAPP_ROLE_MODE=APP_ROLE_MODE_RX" in cdefs
     assert "-DAPP_HUMAN_LOG_ENABLE=0" in cdefs
     assert "-DAPP_MACHINE_LOG_ENABLE=1" in cdefs
@@ -187,9 +187,9 @@ def test_resolve_build_command_adds_high_altitude_cc_cdefs() -> None:
 
 
 def test_run_build_uploads_build_log_and_cleans_workspace(tmp_path: Path) -> None:
-    settings = AgentSettings(
+    settings = HostSettings(
         server_url="http://172.20.10.3:8000",
-        data_dir=tmp_path / "agent_data",
+        data_dir=tmp_path / "host_data",
     )
     settings.prepare_dirs()
     executor = BuildExecutor(settings)
@@ -266,10 +266,10 @@ def test_run_build_uploads_build_log_and_cleans_workspace(tmp_path: Path) -> Non
     executor._checkout = fake_checkout  # type: ignore[method-assign]
     executor._run_command = fake_run_command  # type: ignore[method-assign]
 
-    result = executor.run_build(payload, client=FakeClient(), agent_id="agent-1")
+    result = executor.run_build(payload, client=FakeClient(), host_id="host-1")
 
     assert result.success is True
-    assert commands[0].startswith("range-test-agent build-high-altitude-cc")
+    assert commands[0].startswith("rtms-host build-high-altitude-cc")
     assert raw_upload_calls[0]["artifact_type"] == RawArtifactType.BUILD_LOG
     assert raw_upload_calls[0]["role"] == Role.RX
     assert result.uploaded_raw_artifacts[0]["raw_artifact_id"] == "raw-build-log"

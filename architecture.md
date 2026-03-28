@@ -3,14 +3,14 @@
 ## Shape
 
 - `server/` is the control plane: session lifecycle, job dispatch, artifact storage, parsing, merge, report generation, and the operator UI.
-- `agent/` is the host-side worker: registration, heartbeat, build execution, artifact download, OpenOCD flash/verify, capture orchestration, and raw artifact upload.
+- `host/` is the host-side worker: registration, heartbeat, build execution, artifact download, OpenOCD flash/verify, capture orchestration, and raw artifact upload.
 - `shared/` contains the typed protocol and state-machine contracts shared by both sides.
 
 ## Runtime Model
 
 - One active session at a time for the MVP.
 - The server is the source of truth for session state, selected artifacts, job dispatch, and final report output.
-- Agents poll the server for work. This keeps the protocol simple and VPS-friendly.
+- Hosts poll the server for work. This keeps the protocol simple and VPS-friendly.
 - Jobs are explicit objects with `pending -> running -> completed|failed|cancelled` transitions.
 - Each role run uses an explicit execution lifecycle:
   `idle -> assigned -> artifact_pending -> artifact_ready -> flashing -> flash_verified -> prepare_capture -> capture_ready -> capturing -> completed|failed`
@@ -20,7 +20,7 @@
 - Default persistence is SQLite plus local filesystem storage under `server_data/`.
 - Artifact bundles are stored as session-scoped zip files with a `manifest.json`.
 - Raw logs are stored exactly as captured:
-  RTT logs, OpenOCD logs, agent event logs, timing sample files, and generated parser output.
+  RTT logs, OpenOCD logs, host event logs, timing sample files, and generated parser output.
 
 ## Coordination
 
@@ -31,9 +31,9 @@
 
 ## Timing
 
-- Agents sample server time and estimate offset using a midpoint method.
+- Hosts sample server time and estimate offset using a midpoint method.
 - Offset samples are preserved in diagnostics and uploaded timing artifacts.
-- The parser corrects host timestamps using stored agent offset samples before merge.
+- The parser corrects host timestamps using stored host offset samples before merge.
 - Relative timestamps are aligned to the coordinated capture start time when possible.
 
 ## Parsing And Reports

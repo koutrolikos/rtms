@@ -1,0 +1,46 @@
+  <nav class="pipeline-nav session-pipeline-nav" aria-label="Session stages" data-refresh-flash>
+    <button
+      type="button"
+      class="pipeline-nav-button {% if stage.current == 1 %}active{% elif setup_ready %}complete{% endif %}"
+      data-pipeline-jump="stage-configure"
+    >
+      <span class="pipeline-nav-step">1</span>
+      <span class="pipeline-nav-copy">
+        <strong>Configure</strong>
+        <small>{{ "Ready" if setup_ready else "Pending setup" }}</small>
+      </span>
+    </button>
+    <button
+      type="button"
+      class="pipeline-nav-button {% if stage.current == 2 %}active{% elif artifacts_ready %}complete{% endif %}"
+      data-pipeline-jump="stage-artifacts"
+    >
+      <span class="pipeline-nav-step">2</span>
+      <span class="pipeline-nav-copy">
+        <strong>Artifacts</strong>
+        <small>{{ "Ready" if artifacts_ready else "Pending assignment" }}</small>
+      </span>
+    </button>
+    <button
+      type="button"
+      class="pipeline-nav-button {% if stage.current == 3 %}active{% elif run_active %}complete{% endif %}"
+      data-pipeline-jump="stage-run"
+    >
+      <span class="pipeline-nav-step">3</span>
+      <span class="pipeline-nav-copy">
+        <strong>Run</strong>
+        <small>{% if session.status == "capturing" %}Live capture{% elif run_active %}Active{% else %}Waiting{% endif %}</small>
+      </span>
+    </button>
+    <button
+      type="button"
+      class="pipeline-nav-button {% if stage.current == 4 %}active{% elif report_ready %}complete{% endif %}"
+      data-pipeline-jump="stage-outputs"
+    >
+      <span class="pipeline-nav-step">4</span>
+      <span class="pipeline-nav-copy">
+        <strong>Outputs</strong>
+        <small>{{ "Report ready" if report_ready else "Awaiting report" }}</small>
+      </span>
+    </button>
+  </nav>

@@ -1,0 +1,40 @@
+    <section class="panel" id="report-packet-types" data-report-section data-report-title="Packet Type Breakdown">
+      <div class="panel-head">
+        <h3>Packet Type Breakdown</h3>
+      </div>
+      <p class="muted">
+        This separates loss into visibility and acceptance for each packet type using only current TX/RX packet detail.
+      </p>
+      <div class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>Packet Type</th>
+              <th>TX Sent</th>
+              <th>RX Seen</th>
+              <th>RX Accepted</th>
+              <th>TX -&gt; Accepted</th>
+              <th>Seen -&gt; Accepted</th>
+              <th>Accepted RSSI p50</th>
+              <th>Dominant Drop</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in type_breakdown %}
+            <tr>
+              <td>{{ item.label }}</td>
+              <td>{{ item.tx_packets }}</td>
+              <td>{{ item.rx_seen_packets }}</td>
+              <td>{{ item.rx_accepted_packets }}</td>
+              <td>{{ pct(item.delivery_ratio) }}</td>
+              <td>{{ pct(item.acceptance_ratio) }}</td>
+              <td>{% if item.accepted_rssi_p50_dbm is not none %}{{ '%.1f dBm' | format(item.accepted_rssi_p50_dbm) }}{% else %}-{% endif %}</td>
+              <td>{{ item.dominant_drop_reason | humanize_token if item.dominant_drop_reason else "-" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="muted">No packet-type breakdown is available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>

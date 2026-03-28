@@ -3,16 +3,16 @@
 ## Implemented
 
 - FastAPI server with SQLite/file-storage defaults
-- Polling Python agent
-- Agent registration and heartbeat
+- Polling Python host
+- Host registration and heartbeat
 - Host overview page
 - Session creation and edit flow
 - TX/RX host assignment
 - Session-scoped artifact records and bundle storage
 - GitHub repo config and commit-browse API hooks
-- Build-job dispatch to selected agents
-- Agent local build-and-upload command
-- Artifact distribution from server to agents
+- Build-job dispatch to selected hosts
+- Host local build-and-upload command
+- Artifact distribution from server to hosts
 - OpenOCD-compatible flash/verify execution path
 - Coordinated capture start across two roles
 - Manual stop job dispatch
@@ -36,5 +36,5 @@
 ## Assumption Boundary
 
 - The authoritative firmware logging/metrics Markdown document was not present in this workspace during implementation.
-- The parser/report pipeline is therefore intentionally isolated and compatibility-focused, so the authoritative rules can be dropped into `server/app/services/parsing.py` without changing the session, artifact, agent, or report architecture.
+- The parser/report pipeline is therefore intentionally isolated and compatibility-focused, so the authoritative rules can be dropped into `server/app/services/parsing.py` without changing the session, artifact, host, or report architecture.
 

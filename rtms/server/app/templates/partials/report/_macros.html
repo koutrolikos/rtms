@@ -1,0 +1,14 @@
+{% macro pct(value) -%}
+  {%- if value is defined and value is not none -%}{{ '%.1f%%' | format(value * 100) }}{%- else -%}-{%- endif -%}
+{%- endmacro %}
+{% macro num1(value) -%}
+  {%- if value is defined and value is not none -%}{{ '%.1f' | format(value) }}{%- else -%}-{%- endif -%}
+{%- endmacro %}
+{% macro report_limit_note(items, limit, href, label="full dataset") -%}
+  {% if items | length > limit %}
+  <p class="muted report-table-note">
+    Showing first {{ limit }} of {{ items | length }} rows.
+    Use <a href="{{ href }}">{{ label }}</a> for the complete data.
+  </p>
+  {% endif %}
+{%- endmacro %}

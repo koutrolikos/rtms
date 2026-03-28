@@ -1,7 +1,7 @@
 import pytest
 
-from shared.enums import JobState, RoleRunState, SessionState
-from shared.state_machine import StateTransitionError, transition_job, transition_role_run, transition_session
+from rtms.shared.enums import JobState, RoleRunState, SessionState
+from rtms.shared.state_machine import StateTransitionError, transition_job, transition_role_run, transition_session
 
 
 def test_session_happy_path_transitions() -> None:

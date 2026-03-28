@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}RTMS{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&family=Orbitron:wght@500..900&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      (() => {
+        try {
+          const stored = window.localStorage.getItem("rtms-theme");
+          const prefersDark =
+            typeof window.matchMedia === "function" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.dataset.theme =
+            stored === "dark" || stored === "light" ? stored : prefersDark ? "dark" : "light";
+        } catch (_error) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/static/style.css?v=20260328a" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1 class="topbar-title"><a href="/hosts">RTMS</a></h1>
+      <div class="topbar-actions">
+        <nav class="topbar-nav">
+          <a href="/hosts" class="{% if request.url.path == '/hosts' or request.url.path == '/' %}active{% endif %}">Hosts</a>
+          <a href="/sessions" class="{% if request.url.path == '/sessions' or (request.url.path.startswith('/sessions/') and request.url.path != '/sessions/new') %}active{% endif %}">Sessions</a>
+          <a href="/sessions/new" class="{% if request.url.path == '/sessions/new' %}active{% endif %}">New Session</a>
+        </nav>
+        <button
+          type="button"
+          class="theme-toggle"
+          id="theme-toggle"
+          aria-label="Toggle dark mode"
+          aria-pressed="false"
+        >
+          <span class="theme-toggle-label">🌙</span>
+          <span class="theme-toggle-track" aria-hidden="true">
+            <span class="theme-toggle-knob"></span>
+          </span>
+        </button>
+      </div>
+    </header>
+    <main class="page">
+      {% block content %}{% endblock %}
+    </main>
+    <div class="copy-toast" id="copy-toast" aria-live="polite" aria-atomic="true"></div>
+    <script>
+      (() => {
+        const toast = document.getElementById("copy-toast");
+        let toastTimer = 0;
+
+        const showToast = (message, isError = false) => {
+          if (!toast) {
+            return;
+          }
+          toast.textContent = message;
+          toast.classList.toggle("visible", true);
+          toast.classList.toggle("error", isError);
+          window.clearTimeout(toastTimer);
+          toastTimer = window.setTimeout(() => {
+            toast.classList.remove("visible", "error");
+          }, 1800);
+        };
+
+        window.rtmsShowToast = showToast;
+        const root = document.documentElement;
+        const themeToggle = document.getElementById("theme-toggle");
+
+        const setTheme = (theme, persist = true) => {
+          root.dataset.theme = theme;
+          if (themeToggle instanceof HTMLButtonElement) {
+            themeToggle.setAttribute("aria-pressed", String(theme === "dark"));
+            themeToggle.setAttribute("title", theme === "dark" ? "Switch to light mode" : "Switch to dark mode");
+          }
+          if (!persist) {
+            return;
+          }
+          try {
+            window.localStorage.setItem("rtms-theme", theme);
+          } catch (_error) {
+            return;
+          }
+        };
+
+        setTheme(root.dataset.theme === "dark" ? "dark" : "light", false);
+
+        if (themeToggle instanceof HTMLButtonElement) {
+          themeToggle.addEventListener("click", () => {
+            setTheme(root.dataset.theme === "dark" ? "light" : "dark");
+          });
+        }
+
+        const fallbackCopy = async (text) => {
+          const probe = document.createElement("textarea");
+          probe.value = text;
+          probe.setAttribute("readonly", "");
+          probe.style.position = "absolute";
+          probe.style.left = "-9999px";
+          document.body.appendChild(probe);
+          probe.select();
+          const ok = document.execCommand("copy");
+          document.body.removeChild(probe);
+          if (!ok) {
+            throw new Error("copy failed");
+          }
+        };
+
+        const copyText = async (text) => {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            return;
+          }
+          await fallbackCopy(text);
+        };
+
+        document.addEventListener("click", async (event) => {
+          const button = event.target.closest("[data-copy-text]");
+          if (!button) {
+            return;
+          }
+          const value = button.getAttribute("data-copy-text") || "";
+          const label = button.getAttribute("data-copy-label") || "value";
+          if (!value) {
+            return;
+          }
+          try {
+            await copyText(value);
+            const original = button.dataset.copyOriginal || button.textContent;
+            button.dataset.copyOriginal = original;
+            button.textContent = "Copied";
+            button.classList.add("copied");
+            window.setTimeout(() => {
+              button.textContent = original;
+              button.classList.remove("copied");
+            }, 1400);
+            showToast(`${label} copied`);
+          } catch (_error) {
+            showToast(`Failed to copy ${label}`, true);
+          }
+        });
+
+        document.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+            return;
+          }
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) {
+            return;
+          }
+          if (target.tagName === "TEXTAREA") {
+            return;
+          }
+          const actionId = target.getAttribute("data-enter-click");
+          if (!actionId) {
+            return;
+          }
+          const action = document.getElementById(actionId);
+          if (!(action instanceof HTMLButtonElement) && !(action instanceof HTMLAnchorElement)) {
+            return;
+          }
+          event.preventDefault();
+          action.click();
+        });
+      })();
+    </script>
+    <script>
+      (() => {
+        const roots = Array.from(document.querySelectorAll("[data-auto-refresh-url][data-auto-refresh-version]"));
+        if (!roots.length) {
+          return;
+        }
+
+        const timeFormatter =
+          typeof Intl === "object" && Intl.DateTimeFormat
+            ? new Intl.DateTimeFormat(undefined, {
+                hour: "numeric",
+                minute: "2-digit",
+                second: "2-digit",
+              })
+            : null;
+
+        const setupAutoRefresh = (root) => {
+          if (!(root instanceof HTMLElement)) {
+            return;
+          }
+          const watchUrl = root.dataset.autoRefreshUrl;
+          if (!watchUrl) {
+            return;
+          }
+
+          const intervalMs = Number(root.dataset.autoRefreshIntervalMs || "2500");
+          const fragmentUrl = root.dataset.autoRefreshFragmentUrl || "";
+          const targetId = root.dataset.autoRefreshTargetId || "";
+          const initName = root.dataset.autoRefreshInit || "";
+          let currentVersion = root.dataset.autoRefreshVersion || "";
+          let pendingVersion = "";
+          let inFlight = false;
+          let forms = [];
+          let deferredToastVersion = "";
+
+          const refreshForms = () => {
+            forms = Array.from(root.querySelectorAll("form"));
+            forms.forEach((form) => {
+              if (form.dataset.autoRefreshBound === "true") {
+                return;
+              }
+              form.dataset.autoRefreshBound = "true";
+              form.dataset.autoRefreshDirty = "false";
+              form.addEventListener("submit", () => {
+                form.dataset.autoRefreshSubmitting = "true";
+                form.dataset.autoRefreshDirty = "false";
+              });
+              form.addEventListener("input", () => {
+                form.dataset.autoRefreshDirty = "true";
+              });
+              form.addEventListener("change", () => {
+                form.dataset.autoRefreshDirty = "true";
+              });
+            });
+          };
+
+          const hasDirtyForms = () =>
+            forms.some((form) => {
+              if (form.dataset.autoRefreshSubmitting === "true") {
+                return false;
+              }
+              return form.dataset.autoRefreshDirty === "true";
+            });
+
+          const isEditing = () => {
+            const active = document.activeElement;
+            return (
+              active instanceof HTMLElement &&
+              root.contains(active) &&
+              (active.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName))
+            );
+          };
+
+          const canRefresh = () => !hasDirtyForms() && !isEditing();
+
+          const markUpdated = () => {
+            const label = timeFormatter ? `just now · ${timeFormatter.format(new Date())}` : "just now";
+            root.querySelectorAll("[data-live-updated-at]").forEach((element) => {
+              element.textContent = label;
+            });
+          };
+
+          const flashElements = (container) => {
+            const targets = container.querySelectorAll("[data-refresh-flash]");
+            const elements = targets.length ? Array.from(targets) : [container];
+            elements.forEach((element) => {
+              element.classList.remove("refresh-flash");
+              void element.offsetWidth;
+              element.classList.add("refresh-flash");
+              window.setTimeout(() => {
+                element.classList.remove("refresh-flash");
+              }, 900);
+            });
+          };
+
+          const applyFragment = async () => {
+            if (!fragmentUrl || !targetId) {
+              window.location.reload();
+              return true;
+            }
+            const response = await fetch(fragmentUrl, {
+              headers: {
+                Accept: "text/html",
+                "Cache-Control": "no-cache",
+                "X-Requested-With": "rtms-fragment",
+              },
+              cache: "no-store",
+            });
+            if (!response.ok) {
+              return false;
+            }
+            const html = await response.text();
+            const template = document.createElement("template");
+            template.innerHTML = html.trim();
+            const nextTarget = template.content.querySelector(`#${CSS.escape(targetId)}`);
+            const currentTarget = root.querySelector(`#${CSS.escape(targetId)}`);
+            if (!(nextTarget instanceof HTMLElement) || !(currentTarget instanceof HTMLElement)) {
+              return false;
+            }
+            const scrollY = window.scrollY;
+            currentTarget.replaceWith(nextTarget);
+            refreshForms();
+            if (initName && typeof window[initName] === "function") {
+              window[initName](root);
+            }
+            markUpdated();
+            flashElements(nextTarget);
+            window.scrollTo({ top: scrollY });
+            return true;
+          };
+
+          const maybeRefresh = async () => {
+            if (!pendingVersion) {
+              return;
+            }
+            if (!canRefresh()) {
+              if (deferredToastVersion !== pendingVersion && typeof window.rtmsShowToast === "function") {
+                window.rtmsShowToast("New backend update detected. Refreshing when edits are idle.");
+                deferredToastVersion = pendingVersion;
+              }
+              return;
+            }
+            const targetVersion = pendingVersion;
+            const refreshed = await applyFragment();
+            if (!refreshed) {
+              if (typeof window.rtmsShowToast === "function") {
+                window.rtmsShowToast("Live refresh failed. Reloading page.", true);
+              }
+              window.location.reload();
+              return;
+            }
+            currentVersion = targetVersion;
+            root.dataset.autoRefreshVersion = targetVersion;
+            pendingVersion = "";
+            deferredToastVersion = "";
+          };
+
+          const pollForUpdates = async () => {
+            if (document.hidden || inFlight) {
+              return;
+            }
+            inFlight = true;
+            try {
+              const response = await fetch(watchUrl, {
+                headers: {
+                  Accept: "application/json",
+                  "Cache-Control": "no-cache",
+                },
+                cache: "no-store",
+              });
+              if (!response.ok) {
+                return;
+              }
+              const responseData = await response.json().catch(() => ({}));
+              if (
+                typeof responseData.version === "string"
+                && responseData.version
+                && responseData.version !== currentVersion
+              ) {
+                pendingVersion = responseData.version;
+                await maybeRefresh();
+              }
+            } catch (_error) {
+              return;
+            } finally {
+              inFlight = false;
+            }
+          };
+
+          refreshForms();
+
+          const tick = () => {
+            if (pendingVersion) {
+              void maybeRefresh();
+              return;
+            }
+            void pollForUpdates();
+          };
+
+          window.setInterval(tick, intervalMs);
+          document.addEventListener(
+            "focusout",
+            () => {
+              if (pendingVersion) {
+                void maybeRefresh();
+              }
+            },
+            true
+          );
+          root.addEventListener(
+            "input",
+            () => {
+              if (pendingVersion) {
+                void maybeRefresh();
+              }
+            },
+            true
+          );
+          root.addEventListener(
+            "change",
+            () => {
+              if (pendingVersion) {
+                void maybeRefresh();
+              }
+            },
+            true
+          );
+          document.addEventListener("visibilitychange", () => {
+            if (document.hidden) {
+              return;
+            }
+            if (pendingVersion) {
+              void maybeRefresh();
+              return;
+            }
+            void pollForUpdates();
+          });
+        };
+
+        roots.forEach(setupAutoRefresh);
+      })();
+    </script>
+  </body>
+</html>

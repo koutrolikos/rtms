@@ -1,0 +1,74 @@
+      <details class="report-expand" id="report-rssi-acceptance" data-report-section data-report-title="Acceptance vs RSSI and Drop Reasons">
+        <summary>Acceptance vs RSSI and drop reasons</summary>
+        {% if relationship %}
+        {% set rel_max_packets = relationship | map(attribute='total_packets') | max %}
+        {% set inner_w = chart_w - chart_pad_l - chart_pad_r %}
+        {% set inner_h = chart_h - chart_pad_t - chart_pad_b %}
+        {% set slot_w = inner_w / (relationship | length) %}
+        <div class="chart-shell">
+          <h4 class="chart-title">RX Acceptance Ratio by RSSI Bin</h4>
+          <svg viewBox="0 0 {{ chart_w }} {{ chart_h }}" class="chart-svg" role="img" aria-label="RX acceptance ratio by RSSI bin">
+            <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+            <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+            {% for item in relationship %}
+            {% set bar_h = (clamp01(item.acceptance_ratio) * inner_h) %}
+            {% set bar_x = chart_pad_l + loop.index0 * slot_w + (slot_w * 0.15) %}
+            {% set bar_y = chart_h - chart_pad_b - bar_h %}
+            {% set bar_w = slot_w * 0.7 %}
+            <rect x="{{ '%.2f' | format(bar_x) }}" y="{{ '%.2f' | format(bar_y) }}" width="{{ '%.2f' | format(bar_w) }}" height="{{ '%.2f' | format(bar_h) }}" fill="{{ c_primary }}" />
+            <text x="{{ '%.2f' | format(bar_x + bar_w / 2) }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="middle">{{ item.rssi_start_dbm }}</text>
+            {% endfor %}
+          </svg>
+        </div>
+        {% endif %}
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>RSSI Bin (dBm)</th>
+                <th>RX Seen</th>
+                <th>RX Accepted</th>
+                <th>Seen -&gt; Accepted</th>
+                <th>Seen -&gt; Rejected</th>
+                <th>Avg LQI</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in relationship %}
+              <tr>
+                <td>[{{ item.rssi_start_dbm }}, {{ item.rssi_end_dbm }})</td>
+                <td>{{ item.total_packets }}</td>
+                <td>{{ item.accepted_packets }}</td>
+                <td>{{ pct(item.acceptance_ratio) }}</td>
+                <td>{{ pct(item.rejection_ratio) }}</td>
+                <td>{% if item.avg_lqi is not none %}{{ '%.1f' | format(item.avg_lqi) }}{% else %}-{% endif %}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="muted">No RX packet RSSI/LQI samples available.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>Drop Reason</th>
+                <th>Count</th>
+                <th>Share of Rejections</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in drop_reasons %}
+              <tr>
+                <td>{{ item.drop_reason | humanize_token }}</td>
+                <td>{{ item.count }}</td>
+                <td>{{ pct(item.share) }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="3" class="muted">No RX rejection detail is available.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>

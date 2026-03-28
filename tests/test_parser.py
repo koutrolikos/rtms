@@ -8,12 +8,14 @@ from types import SimpleNamespace
 import pytest
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from server.app.models.entities import Annotation, Artifact, RawArtifact, Session as SessionModel, SessionRoleRun
-from server.app.presentation import register_template_helpers
-from server.app.services.parsing import flatten_machine_timeline, merge_session_logs
-from server.app.services.reporting import generate_report
-from shared.enums import RawArtifactType, ReportStatus, Role
-from shared.mlog import MLOG_KIND_EVT, MLOG_KIND_PKT, MLOG_KIND_RUN, MLOG_KIND_STAT, build_mlog_frame
+from rtms.server.app.models.entities import Annotation, Artifact, RawArtifact, RunSession, SessionRoleRun
+from rtms.server.app.presentation import register_template_helpers
+from rtms.server.app.services.parsing import flatten_machine_timeline, merge_session_logs
+from rtms.server.app.services.reporting import generate_report
+from rtms.shared.enums import RawArtifactType, ReportStatus, Role
+from rtms.shared.mlog import MLOG_KIND_EVT, MLOG_KIND_PKT, MLOG_KIND_RUN, MLOG_KIND_STAT, build_mlog_frame
+
+TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "rtms" / "server" / "app" / "templates"
 
 
 def test_merge_session_logs_decodes_machine_frames_for_both_roles(db_session, tmp_path: Path) -> None:
@@ -102,14 +104,14 @@ def test_generate_report_renders_partial_machine_report_and_excludes_legacy_metr
         session=session,
         storage_root=tmp_path,
         reports_dir=tmp_path / "reports",
-        template_dir=Path(__file__).resolve().parent.parent / "server" / "app" / "templates",
+        template_dir=TEMPLATE_DIR,
     )
 
     assert report.status == ReportStatus.READY.value
-    assert "metrics" not in report.diagnostics_json
-    assert "packet_delivery_ratio" not in report.diagnostics_json
-    assert report.diagnostics_json["roles"]["TX"]["run"]["machine_detail"] == "packet"
-    assert report.diagnostics_json["roles"]["RX"]["run"] is None
+    assert "metrics" not in report.diagnostics
+    assert "packet_delivery_ratio" not in report.diagnostics
+    assert report.diagnostics["roles"]["TX"]["run"]["machine_detail"] == "packet"
+    assert report.diagnostics["roles"]["RX"]["run"] is None
 
     html = (tmp_path / report.html_storage_path).read_text(encoding="utf-8")
     assert "RF Link Verdict" in html
@@ -126,11 +128,11 @@ def test_generate_report_fails_when_no_machine_artifacts_exist(db_session, tmp_p
         session=session,
         storage_root=tmp_path,
         reports_dir=tmp_path / "reports",
-        template_dir=Path(__file__).resolve().parent.parent / "server" / "app" / "templates",
+        template_dir=TEMPLATE_DIR,
     )
 
     assert report.status == ReportStatus.FAILED.value
-    assert any(item["code"] == "machine_report_unavailable" for item in report.diagnostics_json["decode_diagnostics"])
+    assert any(item["code"] == "machine_report_unavailable" for item in report.diagnostics["decode_diagnostics"])
     html = (tmp_path / report.html_storage_path).read_text(encoding="utf-8")
     assert "RF Link Verdict" in html
     assert "No RX packet RSSI/LQI samples available." in html
@@ -294,7 +296,7 @@ def test_merge_session_logs_overrides_human_log_fields_when_build_policy_disable
         session_id=session.id,
         status="ready",
         origin_type="github_build",
-        metadata_json={
+        metadata_payload={
             "build_metadata": {
                 "resolved_cdefs_extra": [
                     "-DAPP_ROLE_MODE=APP_ROLE_MODE_TX",
@@ -310,7 +312,7 @@ def test_merge_session_logs_overrides_human_log_fields_when_build_policy_disable
     role_run = SessionRoleRun(
         session_id=session.id,
         role=Role.TX.value,
-        agent_id="agent-1",
+        host_id="host-1",
         artifact_id=artifact.id,
         status="completed",
     )
@@ -331,17 +333,16 @@ def test_merge_session_logs_overrides_human_log_fields_when_build_policy_disable
     assert any(item.code == "human_log_policy_override" for item in report.decode_diagnostics)
 
 
-def _create_session(db_session) -> SessionModel:
-    session = SessionModel(name="demo", status="merging", stop_mode="fixed_duration", default_duration_minutes=5)
+def _create_session(db_session) -> RunSession:
+    session = RunSession(name="demo", status="merging", stop_mode="fixed_duration", default_duration_minutes=5)
     db_session.add(session)
     db_session.commit()
     return session
 
 
 def _render_report_fragment(*, derived_metrics: dict) -> str:
-    template_dir = Path(__file__).resolve().parent.parent / "server" / "app" / "templates"
     environment = Environment(
-        loader=FileSystemLoader(str(template_dir)),
+        loader=FileSystemLoader(str(TEMPLATE_DIR)),
         autoescape=select_autoescape(["html", "xml"]),
     )
     register_template_helpers(environment)

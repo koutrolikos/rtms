@@ -4,8 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from server.app.core.config import ServerSettings
-from server.app.services.github import GitHubService
+from rtms.server.app.core.config import ServerSettings
+from rtms.server.app.services.github import GitHubService
 
 
 def _run(*args: str, cwd: Path | None = None) -> str:
@@ -53,7 +53,7 @@ def _write_repo_config(tmp_path: Path, repo_root: Path) -> Path:
                     "default_branch": "dev",
                     "local_checkout_path": str(repo_root),
                     "build_recipe": {
-                        "build_command": "range-test-agent build-high-altitude-cc --source . --build-dir build/debug",
+                        "build_command": "rtms-host build-high-altitude-cc --source . --build-dir build/debug",
                         "artifact_globs": ["build/debug/HighAltitudeCC.elf"],
                     },
                 }

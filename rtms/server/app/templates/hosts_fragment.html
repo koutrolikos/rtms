@@ -1,0 +1,159 @@
+{% from "_summary.html" import render_copy_value, render_tags %}
+{% set summary = namespace(idle=0, busy=0, build=0) %}
+{% for host in hosts %}
+  {% if host_status[host.id] == "idle" %}
+    {% set summary.idle = summary.idle + 1 %}
+  {% endif %}
+  {% if host_status[host.id] == "busy" %}
+    {% set summary.busy = summary.busy + 1 %}
+  {% endif %}
+  {% if host.capabilities.build_capable %}
+    {% set summary.build = summary.build + 1 %}
+  {% endif %}
+{% endfor %}
+<div id="hosts-live-shell" class="hosts-live-shell" data-live-shell>
+  <section class="hosts-header" data-refresh-flash>
+    <div class="hosts-header-main">
+      <div class="hosts-header-topline">
+        <div class="hosts-header-heading">
+          <h1>Hosts</h1>
+          <p class="muted">Operator view of connected hosts, availability, and current session touchpoints.</p>
+        </div>
+        <div class="hosts-header-updated">
+          <span class="hero-meta-label">Updated</span>
+          <span data-live-updated-at>
+            {% if last_updated_at %}
+            {{ last_updated_at | human_relative_time }}
+            {% else %}
+            waiting
+            {% endif %}
+          </span>
+        </div>
+      </div>
+      <div class="hosts-header-meta">
+        <div class="hosts-header-cell">
+          <span class="hero-meta-label">Listen</span>
+          <span class="hosts-header-value">{{ settings.host }}:{{ settings.port }}</span>
+        </div>
+        <div class="hosts-header-cell hosts-header-cell-url">
+          <span class="hero-meta-label">Public URL</span>
+          {{ render_copy_value(settings.effective_public_base_url, settings.effective_public_base_url, "public url", true) }}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="overview-strip hosts-overview-strip" data-refresh-flash>
+    <article class="overview-card">
+      <span class="overview-label">Hosts</span>
+      <span class="overview-value">{{ hosts | length }}</span>
+      <span class="overview-meta">registered</span>
+    </article>
+    <article class="overview-card">
+      <span class="overview-label">Build Hosts</span>
+      <span class="overview-value">{{ summary.build }}</span>
+      <span class="overview-meta">build capable</span>
+    </article>
+    <article class="overview-card">
+      <span class="overview-label">Idle</span>
+      <span class="overview-value">{{ summary.idle }}</span>
+      <span class="overview-meta">{{ summary.busy }} busy</span>
+    </article>
+    <article class="overview-card">
+      <span class="overview-label">Sessions</span>
+      <span class="overview-value">{{ all_session_summaries | length }}</span>
+      <span class="overview-meta">tracked</span>
+    </article>
+  </section>
+
+  <section class="hosts-grid">
+    {% for host in hosts %}
+    {% set linked_session = host_session_links.get(host.id) %}
+    <article class="panel host-card" data-refresh-flash>
+      <div class="host-card-head">
+        <div class="host-card-title">
+          <h3>{{ host.label or host.name }}</h3>
+          {% if host.hostname and host.hostname != (host.label or host.name) %}
+          <p class="muted">{{ host.hostname }}</p>
+          {% endif %}
+        </div>
+        <span class="chip chip-{{ host_status[host.id] }}">{{ host_status[host.id] }}</span>
+      </div>
+      <div class="host-card-statusline">
+        <span class="host-card-availability">
+          {% if host_status[host.id] == "busy" %}
+          Currently allocated to an active workflow
+          {% elif host_status[host.id] == "idle" %}
+          Available for assignment
+          {% else %}
+          Awaiting heartbeat
+          {% endif %}
+        </span>
+        {% if linked_session %}
+        <a class="host-card-session-link" href="/sessions/{{ linked_session.id }}">
+          {{ "Open active session" if linked_session.group == "active" else "Open recent session" }}
+        </a>
+        {% endif %}
+      </div>
+      <div class="host-capability-row">
+        {{ render_tags(summarize_capabilities(host.capabilities), "No capabilities") }}
+      </div>
+      <dl class="host-fact-grid">
+        <div><dt>Name</dt><dd>{{ host.name }}</dd></div>
+        <div><dt>Hostname</dt><dd>{{ host.hostname }}</dd></div>
+        <div><dt>IP</dt><dd>{{ host.ip_address or "n/a" }}</dd></div>
+        <div><dt>Probes</dt><dd>{{ host.connected_probe_count }}</dd></div>
+        <div><dt>Version</dt><dd>{{ host.software_version or "n/a" }}</dd></div>
+        <div><dt>Location</dt><dd>{{ host.last_reported_location or "n/a" }}</dd></div>
+        <div class="wide">
+          <dt>Last Seen</dt>
+          <dd>
+            {{ host.last_seen_at | human_relative_time }}
+            <span class="host-fact-subtle">{{ host.last_seen_at }}</span>
+          </dd>
+        </div>
+      </dl>
+    </article>
+    {% else %}
+    <article class="panel host-empty" data-refresh-flash>
+      <p class="muted">No hosts registered yet.</p>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="panel hosts-sessions-panel" data-refresh-flash>
+    <div class="panel-head">
+      <div>
+        <h2>Recent Sessions</h2>
+        <p class="muted">Latest operator activity with direct access to the active workflow.</p>
+      </div>
+      <a class="button secondary" href="/sessions">All Sessions</a>
+    </div>
+    <div class="table-shell table-shell-stack">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Hosts</th>
+            <th>Next Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for session in sessions %}
+          <tr>
+            <td data-cell-label="Name"><a href="/sessions/{{ session.id }}">{{ session.name }}</a></td>
+            <td data-cell-label="Status"><span class="chip chip-{{ session.status }}">{{ session.status | humanize_token }}</span></td>
+            <td data-cell-label="Hosts">{{ session.tx_host_label }} / {{ session.rx_host_label }}</td>
+            <td data-cell-label="Next Action"><a href="{{ session.next_action.href }}">{{ session.next_action.action_label }}</a></td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="muted">No sessions created yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>

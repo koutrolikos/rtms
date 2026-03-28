@@ -4,9 +4,9 @@
 
 1. Start the server on the control machine or VPS.
 2. Open the web UI using the server's LAN/VPS address, not `localhost`.
-3. Start one agent on the TX host and one agent on the RX host with `RANGE_TEST_SERVER_URL` pointed at that server address.
+3. Start one host on the TX host and one host on the RX host with `RTMS_SERVER_URL` pointed at that server address.
 4. Assign TX and RX hosts.
-5. From the session page, search or paste the exact git SHA, load the repo's build defaults for that commit, select the role and firmware config, then queue the build on a build-capable agent. Or upload a prebuilt local ELF from an agent.
+5. From the session page, search or paste the exact git SHA, load the repo's build defaults for that commit, select the role and firmware config, then queue the build on a build-capable host. Or upload a prebuilt local ELF from an host.
 6. Assign a ready TX artifact and a ready RX artifact.
 7. Start the session.
 8. Wait for both roles to prepare and for coordinated capture to begin.
@@ -28,24 +28,24 @@ If flashing or capture fails, inspect:
 - the role run row on the session page
 - the uploaded build log when the failure happened during artifact build
 - the raw OpenOCD log
-- the agent event log
+- the host event log
 - the timing sample file
 
 ## Notes
 
-- The Hosts page shows the agent/public URL the server is advertising for remote agents.
+- The Hosts page shows the host/public URL the server is advertising for remote hosts.
 - Session start notes remain editable after the session ends.
 - Manual stop is available while the session is capturing.
 - Raw artifacts are always preserved, even if parsing or report generation is imperfect.
-- If server auth is enabled, the browser will prompt for HTTP Basic credentials before loading the UI, and agents must be configured with matching `RANGE_TEST_SERVER_USERNAME` and `RANGE_TEST_SERVER_PASSWORD` values.
+- If server auth is enabled, the browser will prompt for HTTP Basic credentials before loading the UI, and hosts must be configured with matching `RTMS_SERVER_USERNAME` and `RTMS_SERVER_PASSWORD` values.
 
 ## Prebuilt ELF Upload
 
-If a repo cannot be built from a clean agent clone using the configured recipe, upload a prebuilt ELF as a
+If a repo cannot be built from a clean host clone using the configured recipe, upload a prebuilt ELF as a
 manual session artifact:
 
 ```bash
-range-test-agent upload-prebuilt \
+rtms-host upload-prebuilt \
   --session-id <session-id> \
   --role TX \
   --elf-path /path/to/tx.elf \

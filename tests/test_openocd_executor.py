@@ -2,27 +2,27 @@ from pathlib import Path
 
 import pytest
 
-from agent.app.core.config import AgentSettings, OpenOcdSettings
-from agent.app.executors.openocd import OpenOcdExecutor, PrepareFailure
-from agent.app.storage.local_state import LocalStateStore, PreparedRoleContext
-from shared.enums import ArtifactOriginType, Role
-from shared.manifest import ArtifactBundleManifest, BundleFileEntry, FlashSpec
-from shared.time_sync import utc_now
+from rtms.host.app.core.config import HostSettings, OpenOcdSettings
+from rtms.host.app.executors.openocd import OpenOcdExecutor, PrepareFailure
+from rtms.host.app.storage.local_state import LocalStateStore, PreparedRoleContext
+from rtms.shared.enums import ArtifactOriginType, Role
+from rtms.shared.manifest import ArtifactBundleManifest, BundleFileEntry, FlashSpec
+from rtms.shared.time_sync import utc_now
 
 
 def test_default_openocd_target_cfg_matches_stm32g4() -> None:
-    settings = AgentSettings(server_url="http://172.20.10.3:8000")
+    settings = HostSettings(server_url="http://172.20.10.3:8000")
     assert settings.openocd.target_cfg == "target/stm32g4x.cfg"
 
 
 def test_program_command_normalizes_windows_path() -> None:
-    settings = AgentSettings(server_url="http://172.20.10.3:8000")
+    settings = HostSettings(server_url="http://172.20.10.3:8000")
     executor = OpenOcdExecutor(settings, LocalStateStore(Path("unused-state")))
     command = executor._program_command(
-        Path(r"agent_data\sessions\session-1\rx\bundle\firmware\High-Altitude-CC.elf")
+        Path(r"host_data\sessions\session-1\rx\bundle\firmware\High-Altitude-CC.elf")
     )
     assert command == (
-        "program {agent_data/sessions/session-1/rx/bundle/firmware/High-Altitude-CC.elf} "
+        "program {host_data/sessions/session-1/rx/bundle/firmware/High-Altitude-CC.elf} "
         "verify reset exit"
     )
 
@@ -30,9 +30,9 @@ def test_program_command_normalizes_windows_path() -> None:
 def test_flash_failure_includes_target_cfg_hint(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     image_path = tmp_path / "fw.elf"
     image_path.write_bytes(b"firmware")
-    settings = AgentSettings(
+    settings = HostSettings(
         server_url="http://172.20.10.3:8000",
-        data_dir=tmp_path / "agent_data",
+        data_dir=tmp_path / "host_data",
         openocd=OpenOcdSettings(target_cfg="target/stm32f4x.cfg"),
     )
     executor = OpenOcdExecutor(settings, LocalStateStore(tmp_path / "state"))
@@ -74,7 +74,7 @@ def test_flash_failure_includes_target_cfg_hint(monkeypatch: pytest.MonkeyPatch,
             "Error: auto_probe failed\n"
         )
 
-    monkeypatch.setattr("agent.app.executors.openocd.subprocess.run", lambda *args, **kwargs: Completed())
+    monkeypatch.setattr("rtms.host.app.executors.openocd.subprocess.run", lambda *args, **kwargs: Completed())
 
     with pytest.raises(PrepareFailure) as exc_info:
         executor._flash_and_verify(image_path, context)
@@ -87,9 +87,9 @@ def test_flash_failure_includes_target_cfg_hint(monkeypatch: pytest.MonkeyPatch,
 def test_missing_openocd_binary_includes_install_hint(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     image_path = tmp_path / "fw.elf"
     image_path.write_bytes(b"firmware")
-    settings = AgentSettings(
+    settings = HostSettings(
         server_url="http://172.20.10.3:8000",
-        data_dir=tmp_path / "agent_data",
+        data_dir=tmp_path / "host_data",
         openocd=OpenOcdSettings(openocd_bin="openocd"),
     )
     executor = OpenOcdExecutor(settings, LocalStateStore(tmp_path / "state"))
@@ -126,14 +126,14 @@ def test_missing_openocd_binary_includes_install_hint(monkeypatch: pytest.Monkey
     def raise_missing(*args, **kwargs):
         raise FileNotFoundError("[WinError 2] The system cannot find the file specified")
 
-    monkeypatch.setattr("agent.app.executors.openocd.subprocess.run", raise_missing)
+    monkeypatch.setattr("rtms.host.app.executors.openocd.subprocess.run", raise_missing)
 
     with pytest.raises(PrepareFailure) as exc_info:
         executor._flash_and_verify(image_path, context)
 
     assert exc_info.value.reason == "openocd_launch_failed"
     assert exc_info.value.diagnostics["openocd_bin"] == "openocd"
-    assert "RANGE_TEST_OPENOCD_BIN" in exc_info.value.diagnostics["hint"]
+    assert "RTMS_OPENOCD_BIN" in exc_info.value.diagnostics["hint"]
 
 
 def test_flash_uses_adapter_serial_with_normalized_probe_serial(
@@ -142,9 +142,9 @@ def test_flash_uses_adapter_serial_with_normalized_probe_serial(
 ) -> None:
     image_path = tmp_path / "fw.elf"
     image_path.write_bytes(b"firmware")
-    settings = AgentSettings(
+    settings = HostSettings(
         server_url="http://172.20.10.3:8000",
-        data_dir=tmp_path / "agent_data",
+        data_dir=tmp_path / "host_data",
     )
     executor = OpenOcdExecutor(settings, LocalStateStore(tmp_path / "state"))
     context = PreparedRoleContext(
@@ -187,7 +187,7 @@ def test_flash_uses_adapter_serial_with_normalized_probe_serial(
         captured_command[:] = command
         return Completed()
 
-    monkeypatch.setattr("agent.app.executors.openocd.subprocess.run", fake_run)
+    monkeypatch.setattr("rtms.host.app.executors.openocd.subprocess.run", fake_run)
 
     executor._flash_and_verify(image_path, context)
 

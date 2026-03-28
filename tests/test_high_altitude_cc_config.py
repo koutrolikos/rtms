@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from shared.enums import Role
-from shared.high_altitude_cc import build_high_altitude_cc_cdefs, parse_high_altitude_cc_build_config
+from rtms.shared.enums import Role
+from rtms.shared.high_altitude_cc import build_high_altitude_cc_cdefs, parse_high_altitude_cc_build_config
 
 
 APP_CONFIG_SAMPLE = """

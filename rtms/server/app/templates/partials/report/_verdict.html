@@ -1,0 +1,86 @@
+<section class="panel report-engineer-header" id="report-verdict" data-report-section data-report-title="RF Link Verdict">
+  <div class="report-engineer-head">
+    <div>
+      <span class="report-headline">{{ overview.get("headline") or "Insufficient telemetry" }}</span>
+      <h3>RF Link Verdict</h3>
+      <p class="report-headline-reason">
+        {{ overview.get("reason") or "This report intentionally stays within what current decoded TX/RX machine logs can prove." }}
+      </p>
+    </div>
+    <div class="report-status-row">
+      <span class="report-pill">TX packets {{ overview.get("tx_packets") or 0 }}</span>
+      <span class="report-pill">RX seen {{ overview.get("rx_seen_packets") or 0 }}</span>
+      <span class="report-pill">RX accepted {{ overview.get("rx_accepted_packets") or 0 }}</span>
+      <span class="report-pill">
+        Duration
+        {% if overview.get("session_span_ms") is not none %}
+          {{ '%.1f s' | format(overview.get("session_span_ms") / 1000.0) }}
+        {% else %}
+          -
+        {% endif %}
+      </span>
+      <span class="report-pill">
+        RF bitrate
+        {% if channel.get("rf_bitrate_bps") is not none %}
+          {{ channel.get("rf_bitrate_bps") }} bps
+        {% else %}
+          -
+        {% endif %}
+      </span>
+      <span class="report-pill">
+        RX thresholds
+        {% if channel.get("rx_thresh_enable") is sameas true %}
+          on
+        {% elif channel.get("rx_thresh_enable") is sameas false %}
+          off
+        {% else %}
+          -
+        {% endif %}
+      </span>
+    </div>
+  </div>
+
+  <div class="report-overview-strip report-overview-strip-engineer">
+    <article class="overview-card">
+      <span class="overview-label">TX -> RX Accepted</span>
+      <span class="overview-value"><a href="#report-loss-hotspots">{{ pct(overview.get("delivery_ratio")) }}</a></span>
+    </article>
+    <article class="overview-card">
+      <span class="overview-label">TX -> RX Seen</span>
+      <span class="overview-value"><a href="#report-loss-hotspots">{{ pct(overview.get("visibility_ratio")) }}</a></span>
+    </article>
+    <article class="overview-card">
+      <span class="overview-label">RX Seen -> Accepted</span>
+      <span class="overview-value"><a href="#report-rssi-acceptance">{{ pct(overview.get("acceptance_ratio")) }}</a></span>
+    </article>
+    <article class="overview-card">
+      <span class="overview-label">Accepted RSSI p50</span>
+      <span class="overview-value">
+        <a href="#report-rssi-acceptance">
+        {% if overview.get("accepted_rssi_p50_dbm") is not none %}
+          {{ '%.1f dBm' | format(overview.get("accepted_rssi_p50_dbm")) }}
+        {% else %}
+          -
+        {% endif %}
+        </a>
+      </span>
+    </article>
+  </div>
+
+  <div class="report-health-bars">
+    {% for item in bars %}
+    <div>
+      <div class="report-engineer-head">
+        <strong><a href="#report-evidence">{{ item.label }}</a></strong>
+        <span>{{ item.value_text }}</span>
+      </div>
+      <div class="report-health-track">
+        <span class="report-health-fill {{ item.tone }}" style="width: {{ '%.1f' | format(item.percent) }}%;"></span>
+      </div>
+      <div class="muted">{{ item.detail }}</div>
+    </div>
+    {% else %}
+    <div class="muted">No link-quality summary bars available.</div>
+    {% endfor %}
+  </div>
+</section>

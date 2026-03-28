@@ -1,0 +1,117 @@
+    <section class="report-role-scorecards" id="report-scorecards" data-report-section data-report-title="TX and RX Scorecards">
+      <section class="panel report-role-scorecard report-role-scorecard-tx">
+        <div class="panel-head">
+          <h3>TX Pressure</h3>
+        </div>
+        <div class="report-metric-grid">
+          <div>
+            <span class="overview-label">Completed</span>
+            <span class="overview-value">{{ tx_health.get("completed_count") if tx_health.get("completed_count") is not none else (overview.get("tx_packets") or 0) }}</span>
+          </div>
+          <div>
+            <span class="overview-label">Timeouts</span>
+            <span class="overview-value">{{ tx_health.get("timeout_count") if tx_health.get("timeout_count") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">Send Fails</span>
+            <span class="overview-value">{{ tx_health.get("send_fail_count") if tx_health.get("send_fail_count") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">Busy Count</span>
+            <span class="overview-value">{{ tx_health.get("busy_count") if tx_health.get("busy_count") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">Airtime Utilization</span>
+            <span class="overview-value">{{ pct(tx_health.get("airtime_utilization_ratio")) }}</span>
+          </div>
+          <div>
+            <span class="overview-label">Complete Latency p90</span>
+            <span class="overview-value">
+              {% if tx_timing.get("complete_latency_ms") and tx_timing.get("complete_latency_ms").get("p90") is not none %}
+                {{ '%.1f ms' | format(tx_timing.get("complete_latency_ms").get("p90")) }}
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+          <div>
+            <span class="overview-label">Schedule Lag p90</span>
+            <span class="overview-value">
+              {% if tx_timing.get("schedule_lag_ms") and tx_timing.get("schedule_lag_ms").get("p90") is not none %}
+                {{ '%.1f ms' | format(tx_timing.get("schedule_lag_ms").get("p90")) }}
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+          <div>
+            <span class="overview-label">TX Timeout Budget</span>
+            <span class="overview-value">
+              {% if channel.get("tx_complete_timeout_ms") is not none %}
+                {{ channel.get("tx_complete_timeout_ms") }} ms
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel report-role-scorecard report-role-scorecard-rx">
+        <div class="panel-head">
+          <h3>RX Evidence</h3>
+        </div>
+        <div class="report-metric-grid">
+          <div>
+            <span class="overview-label">Accepted</span>
+            <span class="overview-value">{{ overview.get("rx_accepted_packets") or 0 }}</span>
+          </div>
+          <div>
+            <span class="overview-label">Rejected</span>
+            <span class="overview-value">{{ overview.get("rx_rejected_packets") or 0 }}</span>
+          </div>
+          <div>
+            <span class="overview-label">CRC Fails</span>
+            <span class="overview-value">{{ rx_health.get("rx_crc_fail_count") if rx_health.get("rx_crc_fail_count") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">Overflows</span>
+            <span class="overview-value">{{ rx_health.get("rx_overflow_count") if rx_health.get("rx_overflow_count") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">Accepted RSSI p10 / p50</span>
+            <span class="overview-value">
+              {% if signal.get("accepted_rssi") and signal.get("accepted_rssi").get("p10") is not none and signal.get("accepted_rssi").get("p50") is not none %}
+                {{ '%.1f / %.1f dBm' | format(signal.get("accepted_rssi").get("p10"), signal.get("accepted_rssi").get("p50")) }}
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+          <div>
+            <span class="overview-label">Accepted LQI p10 / p50</span>
+            <span class="overview-value">
+              {% if signal.get("accepted_lqi") and signal.get("accepted_lqi").get("p10") is not none and signal.get("accepted_lqi").get("p50") is not none %}
+                {{ '%.1f / %.1f' | format(signal.get("accepted_lqi").get("p10"), signal.get("accepted_lqi").get("p50")) }}
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+          <div>
+            <span class="overview-label">RSSI Margin vs Threshold p10</span>
+            <span class="overview-value">
+              {% if signal.get("accepted_rssi_margin_p10_db") is not none %}
+                {{ '%+.1f dB' | format(signal.get("accepted_rssi_margin_p10_db")) }}
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+          <div>
+            <span class="overview-label">Dominant Drop Reason</span>
+            <span class="overview-value">{{ overview.get("dominant_drop_reason") | humanize_token if overview.get("dominant_drop_reason") else "-" }}</span>
+          </div>
+        </div>
+      </section>
+    </section>

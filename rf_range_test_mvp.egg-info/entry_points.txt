@@ -1,3 +1,0 @@
-[console_scripts]
-range-test-agent = agent.app.cli.main:main
-range-test-server = server.app.main:run

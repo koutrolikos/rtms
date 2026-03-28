@@ -1,19 +1,19 @@
 from pathlib import Path
 
-from agent.app.core.config import AgentSettings
-from agent.app.services.bundles import extract_bundle, load_manifest
-from agent.app.services.runtime import AgentRuntime
-from shared.enums import Role
-from shared.schemas import ArtifactUploadResult
+from rtms.host.app.core.config import HostSettings
+from rtms.host.app.services.bundles import extract_bundle, load_manifest
+from rtms.host.app.services.runtime import HostRuntime
+from rtms.shared.enums import Role
+from rtms.shared.schemas import ArtifactUploadResult
 
 
 def test_upload_prebuilt_artifact_creates_manual_bundle(tmp_path: Path) -> None:
     elf_path = tmp_path / "High-Altitude-CC.elf"
     elf_path.write_bytes(b"firmware")
-    runtime = AgentRuntime(
-        AgentSettings(
+    runtime = HostRuntime(
+        HostSettings(
             server_url="http://172.20.10.3:8000",
-            data_dir=tmp_path / "agent_data",
+            data_dir=tmp_path / "host_data",
         )
     )
     uploaded = {}

@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from agent.app.services.bundles import create_artifact_bundle, create_prebuilt_elf_bundle, load_manifest
-from shared.enums import ArtifactOriginType, Role
+from rtms.host.app.services.bundles import create_artifact_bundle, create_prebuilt_elf_bundle, load_manifest
+from rtms.shared.enums import ArtifactOriginType, Role
 
 
 def test_bundle_manifest_round_trip(tmp_path: Path) -> None:
@@ -13,7 +13,7 @@ def test_bundle_manifest_round_trip(tmp_path: Path) -> None:
         session_id="session-1",
         artifact_id="artifact-1",
         origin_type=ArtifactOriginType.GITHUB_BUILD,
-        producing_agent_id="agent-1",
+        producing_host_id="host-1",
         role_hint=Role.TX,
         source_repo="org/repo",
         git_sha="abc123",
@@ -24,7 +24,7 @@ def test_bundle_manifest_round_trip(tmp_path: Path) -> None:
         build_metadata={"flavor": "release"},
     )
     extract_dir = tmp_path / "extract"
-    from agent.app.services.bundles import extract_bundle
+    from rtms.host.app.services.bundles import extract_bundle
 
     extract_bundle(bundle, extract_dir)
     manifest = load_manifest(extract_dir)
@@ -51,7 +51,7 @@ def test_prebuilt_elf_bundle_manifest_round_trip(tmp_path: Path) -> None:
     )
 
     extract_dir = tmp_path / "extract-prebuilt"
-    from agent.app.services.bundles import extract_bundle
+    from rtms.host.app.services.bundles import extract_bundle
 
     extract_bundle(bundle, extract_dir)
     manifest = load_manifest(extract_dir)

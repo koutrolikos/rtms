@@ -1,0 +1,111 @@
+    <section class="report-primary-grid" id="report-radio-snapshot" data-report-section data-report-title="Radio Snapshot">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Radio and Threshold Snapshot</h3>
+        </div>
+        <div class="report-metric-grid">
+          <div>
+            <span class="overview-label">Active Frequency</span>
+            <span class="overview-value">
+              {% if channel.get("active_freq_hz") is not none %}
+                {{ '%.3f MHz' | format(channel.get("active_freq_hz") / 1000000.0) }}
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+          <div>
+            <span class="overview-label">Backup Frequency</span>
+            <span class="overview-value">
+              {% if channel.get("backup_freq_hz") is not none %}
+                {{ '%.3f MHz' | format(channel.get("backup_freq_hz") / 1000000.0) }}
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+          <div>
+            <span class="overview-label">RF Bitrate</span>
+            <span class="overview-value">{{ channel.get("rf_bitrate_bps") if channel.get("rf_bitrate_bps") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">Stat Period</span>
+            <span class="overview-value">
+              {% if channel.get("machine_log_stat_period_ms") is not none %}
+                {{ channel.get("machine_log_stat_period_ms") }} ms
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+          <div>
+            <span class="overview-label">RX RSSI Threshold</span>
+            <span class="overview-value">
+              {% if channel.get("rx_min_rssi_dbm") is not none %}
+                {{ channel.get("rx_min_rssi_dbm") }} dBm
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+          <div>
+            <span class="overview-label">RX LQI Threshold</span>
+            <span class="overview-value">{{ channel.get("rx_min_lqi") if channel.get("rx_min_lqi") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">RX Poll Interval</span>
+            <span class="overview-value">
+              {% if channel.get("rx_poll_interval_ms") is not none %}
+                {{ channel.get("rx_poll_interval_ms") }} ms
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+          <div>
+            <span class="overview-label">Host Bridge Budget</span>
+            <span class="overview-value">{{ channel.get("rx_host_bridge_budget_count") if channel.get("rx_host_bridge_budget_count") is not none else "-" }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Receiver Loss Counters</h3>
+        </div>
+        <div class="report-metric-grid">
+          <div>
+            <span class="overview-label">Filtered Total</span>
+            <span class="overview-value">{{ rx_health.get("filtered_total_count") if rx_health.get("filtered_total_count") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">CRC Fails</span>
+            <span class="overview-value">{{ rx_health.get("rx_crc_fail_count") if rx_health.get("rx_crc_fail_count") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">RSSI-only Filters</span>
+            <span class="overview-value">{{ rx_health.get("filtered_rssi_only_count") if rx_health.get("filtered_rssi_only_count") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">LQI-only Filters</span>
+            <span class="overview-value">{{ rx_health.get("filtered_lqi_only_count") if rx_health.get("filtered_lqi_only_count") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">Both Filters</span>
+            <span class="overview-value">{{ rx_health.get("filtered_both_count") if rx_health.get("filtered_both_count") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">Overflow Count</span>
+            <span class="overview-value">{{ rx_health.get("rx_overflow_count") if rx_health.get("rx_overflow_count") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">Poll Recoveries</span>
+            <span class="overview-value">{{ rx_health.get("poll_recovery_count") if rx_health.get("poll_recovery_count") is not none else "-" }}</span>
+          </div>
+          <div>
+            <span class="overview-label">SPI Backpressure</span>
+            <span class="overview-value">{{ rx_health.get("spi_backpressure_count") if rx_health.get("spi_backpressure_count") is not none else "-" }}</span>
+          </div>
+        </div>
+      </section>
+    </section>

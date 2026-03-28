@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from server.app.core.config import ServerSettings
-from server.app.models.entities import Artifact, Job, Session as SessionModel
-from server.app.services.sessions import (
+from rtms.server.app.core.config import ServerSettings
+from rtms.server.app.models.entities import Artifact, Job, RunSession
+from rtms.server.app.services.sessions import (
     assign_artifact,
     assign_hosts,
     create_session,
     start_session,
 )
-from shared.enums import ArtifactStatus, Role
-from shared.schemas import AssignArtifactRequest, AssignHostsRequest, SessionCreateRequest
+from rtms.shared.enums import ArtifactStatus, Role
+from rtms.shared.schemas import AssignArtifactRequest, AssignHostsRequest, SessionCreateRequest
 
 
 def test_session_start_creates_prepare_jobs(db_session) -> None:
@@ -32,7 +32,7 @@ def test_session_start_creates_prepare_jobs(db_session) -> None:
     assign_hosts(
         db_session,
         session.id,
-        AssignHostsRequest(tx_agent_id="agent-tx", rx_agent_id="agent-rx"),
+        AssignHostsRequest(tx_host_id="host-tx", rx_host_id="host-rx"),
     )
     assign_artifact(db_session, session.id, AssignArtifactRequest(role=Role.TX, artifact_id=tx_artifact.id))
     assign_artifact(db_session, session.id, AssignArtifactRequest(role=Role.RX, artifact_id=rx_artifact.id))

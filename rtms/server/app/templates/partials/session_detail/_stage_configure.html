@@ -1,0 +1,75 @@
+      <section
+        class="pipeline-stage {% if stage.current == 1 %}is-open{% endif %}"
+        id="stage-configure"
+        data-pipeline-stage
+        data-stage-status="{% if stage.current == 1 %}active{% elif setup_ready %}complete{% else %}pending{% endif %}"
+      >
+        <header class="pipeline-stage-head">
+          <div class="pipeline-stage-heading">
+            <div class="pipeline-stage-title">
+              <span class="pipeline-step-number">1</span>
+              <div>
+                <h3>Configure</h3>
+              </div>
+            </div>
+            <div class="pipeline-stage-meta">
+              <span class="pipeline-pill {% if setup_ready %}ready{% else %}pending{% endif %}">
+                {{ "ready" if setup_ready else "pending" }}
+              </span>
+            </div>
+          </div>
+        </header>
+        <div class="pipeline-stage-body">
+          <article class="panel session-setup-panel">
+            <div class="panel-section-grid session-setup-grid">
+              <section class="panel-section session-setup-section">
+                <div class="panel-section-head">
+                  <h4>Metadata</h4>
+                </div>
+                <form method="post" action="/sessions/{{ session.id }}/metadata" class="stack session-setup-form session-metadata-form">
+                  <label class="wide-field"><span>Name</span><input type="text" name="name" value="{{ session.name }}" /></label>
+                  <label><span>Stop Mode</span>
+                    <select name="stop_mode">
+                      <option value="default_duration" {% if session.stop_mode == "default_duration" %}selected{% endif %}>Default duration</option>
+                      <option value="fixed_duration" {% if session.stop_mode == "fixed_duration" %}selected{% endif %}>Fixed duration</option>
+                      <option value="manual" {% if session.stop_mode == "manual" %}selected{% endif %}>Manual stop</option>
+                    </select>
+                  </label>
+                  <label><span>Selected Duration Minutes</span><input type="number" min="1" name="selected_duration_minutes" value="{{ session.selected_duration_minutes or session.default_duration_minutes }}" /></label>
+                  <label class="wide-field"><span>Location</span><input type="text" name="location_text" value="{{ session.location_text or '' }}" /></label>
+                  <label><span>Initial Notes</span><textarea class="notes-field" name="initial_notes" rows="1">{{ session.initial_notes or "" }}</textarea></label>
+                  <label><span>Final Notes</span><textarea class="notes-field" name="final_notes" rows="1">{{ session.final_notes or "" }}</textarea></label>
+                  <button type="submit">Save Session Details</button>
+                </form>
+              </section>
+
+              <section class="panel-section session-setup-section">
+                <div class="panel-section-head">
+                  <h4>Hosts</h4>
+                </div>
+                <form method="post" action="/sessions/{{ session.id }}/hosts" class="stack session-setup-form session-hosts-form">
+                  <label>
+                    <span>TX Host</span>
+                    <select name="tx_host_id" required>
+                      <option value="">Select TX host</option>
+                      {% for host in hosts %}
+                      <option value="{{ host.id }}" {% if session.tx_host_id == host.id %}selected{% endif %}>{{ host.label or host.name }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label>
+                    <span>RX Host</span>
+                    <select name="rx_host_id" required>
+                      <option value="">Select RX host</option>
+                      {% for host in hosts %}
+                      <option value="{{ host.id }}" {% if session.rx_host_id == host.id %}selected{% endif %}>{{ host.label or host.name }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <button type="submit">Assign Hosts</button>
+                </form>
+              </section>
+            </div>
+          </article>
+        </div>
+      </section>

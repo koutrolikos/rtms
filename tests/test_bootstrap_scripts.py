@@ -6,9 +6,9 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LINUX_BOOTSTRAP = REPO_ROOT / "scripts" / "bootstrap_agent_linux.sh"
-MACOS_BOOTSTRAP = REPO_ROOT / "scripts" / "bootstrap_agent_macos.sh"
-RUN_AGENT = REPO_ROOT / "scripts" / "run_agent.sh"
+LINUX_BOOTSTRAP = REPO_ROOT / "scripts" / "bootstrap_host_linux.sh"
+MACOS_BOOTSTRAP = REPO_ROOT / "scripts" / "bootstrap_host_macos.sh"
+RUN_HOST = REPO_ROOT / "scripts" / "run_host.sh"
 RUN_SERVER = REPO_ROOT / "scripts" / "run_server.sh"
 SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 
@@ -195,7 +195,7 @@ def test_linux_bootstrap_supports_equals_syntax_and_relative_install_dir(tmp_pat
         LINUX_BOOTSTRAP,
         [
             "--server-url=http://example.com:8000/",
-            "--install-dir=relative/agent",
+            "--install-dir=relative/host",
             "--mode=build-only",
             "--install-build-tools=false",
         ],
@@ -206,14 +206,14 @@ def test_linux_bootstrap_supports_equals_syntax_and_relative_install_dir(tmp_pat
     )
 
     assert result.returncode == 0, result.stderr
-    env_file = work_dir / "relative" / "agent" / ".agent-env.sh"
+    env_file = work_dir / "relative" / "host" / ".rtms-env.sh"
     assert env_file.exists()
     env_text = env_file.read_text(encoding="utf-8")
-    assert f'export RANGE_TEST_INSTALL_DIR="{work_dir / "relative" / "agent"}"' in env_text
-    assert 'export RANGE_TEST_SERVER_URL="http://example.com:8000"' in env_text
-    assert f'export RANGE_TEST_AGENT_DATA_DIR="{work_dir / "relative" / "agent" / "agent_data"}"' in env_text
-    assert f'export RANGE_TEST_SERVER_DATA_DIR="{work_dir / "relative" / "agent" / "server_data"}"' in env_text
-    assert not (home_dir / "relative" / "agent" / ".agent-env.sh").exists()
+    assert f'export RTMS_INSTALL_DIR="{work_dir / "relative" / "host"}"' in env_text
+    assert 'export RTMS_SERVER_URL="http://example.com:8000"' in env_text
+    assert f'export RTMS_HOST_DATA_DIR="{work_dir / "relative" / "host" / "host_data"}"' in env_text
+    assert f'export RTMS_SERVER_DATA_DIR="{work_dir / "relative" / "host" / "server_data"}"' in env_text
+    assert not (home_dir / "relative" / "host" / ".rtms-env.sh").exists()
 
 
 def test_linux_bootstrap_rejects_non_git_nonempty_install_dir(tmp_path: Path) -> None:
@@ -221,7 +221,7 @@ def test_linux_bootstrap_rejects_non_git_nonempty_install_dir(tmp_path: Path) ->
     log_dir = tmp_path / "logs"
     home_dir = tmp_path / "home"
     work_dir = tmp_path / "workspace"
-    existing_dir = work_dir / "existing-agent"
+    existing_dir = work_dir / "existing-host"
     bin_dir.mkdir()
     home_dir.mkdir()
     work_dir.mkdir()
@@ -263,7 +263,7 @@ def test_macos_bootstrap_supports_equals_syntax_and_relative_install_dir(tmp_pat
         MACOS_BOOTSTRAP,
         [
             "--server-url=http://example.com:8000/",
-            "--install-dir=relative/agent",
+            "--install-dir=relative/host",
             "--mode=build-only",
             "--install-build-tools=false",
         ],
@@ -274,44 +274,44 @@ def test_macos_bootstrap_supports_equals_syntax_and_relative_install_dir(tmp_pat
     )
 
     assert result.returncode == 0, result.stderr
-    env_file = work_dir / "relative" / "agent" / ".agent-env.sh"
+    env_file = work_dir / "relative" / "host" / ".rtms-env.sh"
     assert env_file.exists()
     env_text = env_file.read_text(encoding="utf-8")
-    assert f'export RANGE_TEST_INSTALL_DIR="{work_dir / "relative" / "agent"}"' in env_text
-    assert 'export RANGE_TEST_SERVER_URL="http://example.com:8000"' in env_text
-    assert f'export RANGE_TEST_AGENT_DATA_DIR="{work_dir / "relative" / "agent" / "agent_data"}"' in env_text
-    assert f'export RANGE_TEST_SERVER_DATA_DIR="{work_dir / "relative" / "agent" / "server_data"}"' in env_text
+    assert f'export RTMS_INSTALL_DIR="{work_dir / "relative" / "host"}"' in env_text
+    assert 'export RTMS_SERVER_URL="http://example.com:8000"' in env_text
+    assert f'export RTMS_HOST_DATA_DIR="{work_dir / "relative" / "host" / "host_data"}"' in env_text
+    assert f'export RTMS_SERVER_DATA_DIR="{work_dir / "relative" / "host" / "server_data"}"' in env_text
 
 
-def test_run_agent_uses_install_dir_fallback_when_global_shim_is_missing(tmp_path: Path) -> None:
+def test_run_host_uses_install_dir_fallback_when_global_shim_is_missing(tmp_path: Path) -> None:
     install_dir = tmp_path / "install"
-    agent_bin = install_dir / ".venv" / "bin" / "range-test-agent"
-    env_file = install_dir / ".agent-env.sh"
-    agent_bin.parent.mkdir(parents=True, exist_ok=True)
+    host_bin = install_dir / ".venv" / "bin" / "rtms-host"
+    env_file = install_dir / ".rtms-env.sh"
+    host_bin.parent.mkdir(parents=True, exist_ok=True)
     _write_executable(
-        agent_bin,
+        host_bin,
         """#!/usr/bin/env bash
 set -euo pipefail
 printf 'ARGS:%s\\n' "$*"
-printf 'SERVER:%s\\n' "${RANGE_TEST_SERVER_URL:-}"
+printf 'SERVER:%s\\n' "${RTMS_SERVER_URL:-}"
 """,
     )
     env_file.write_text(
         (
-            'export RANGE_TEST_SERVER_URL="http://fallback.test:8000"\n'
-            f'export RANGE_TEST_INSTALL_DIR="{install_dir}"\n'
-            f'export RANGE_TEST_AGENT_DATA_DIR="{install_dir / "agent_data"}"\n'
-            f'export RANGE_TEST_SERVER_DATA_DIR="{install_dir / "server_data"}"\n'
+            'export RTMS_SERVER_URL="http://fallback.test:8000"\n'
+            f'export RTMS_INSTALL_DIR="{install_dir}"\n'
+            f'export RTMS_HOST_DATA_DIR="{install_dir / "host_data"}"\n'
+            f'export RTMS_SERVER_DATA_DIR="{install_dir / "server_data"}"\n'
         ),
         encoding="utf-8",
     )
 
     result = _run_script(
-        RUN_AGENT,
+        RUN_HOST,
         ["--foreground"],
         cwd=tmp_path,
         home=tmp_path / "home",
-        extra_env={"RANGE_TEST_INSTALL_DIR": str(install_dir)},
+        extra_env={"RTMS_INSTALL_DIR": str(install_dir)},
     )
 
     assert result.returncode == 0, result.stderr
@@ -321,23 +321,23 @@ printf 'SERVER:%s\\n' "${RANGE_TEST_SERVER_URL:-}"
 
 def test_run_server_uses_install_dir_fallback_when_global_shim_is_missing(tmp_path: Path) -> None:
     install_dir = tmp_path / "install"
-    server_bin = install_dir / ".venv" / "bin" / "range-test-server"
+    server_bin = install_dir / ".venv" / "bin" / "rtms-server"
     server_bin.parent.mkdir(parents=True, exist_ok=True)
     _write_executable(
         server_bin,
         """#!/usr/bin/env bash
 set -euo pipefail
 printf 'ARGS:%s\\n' "$*"
-printf 'SERVER_DATA:%s\\n' "${RANGE_TEST_SERVER_DATA_DIR:-}"
+printf 'SERVER_DATA:%s\\n' "${RTMS_SERVER_DATA_DIR:-}"
 """,
     )
-    env_file = install_dir / ".agent-env.sh"
+    env_file = install_dir / ".rtms-env.sh"
     env_file.parent.mkdir(parents=True, exist_ok=True)
     env_file.write_text(
         (
-            f'export RANGE_TEST_INSTALL_DIR="{install_dir}"\n'
-            f'export RANGE_TEST_AGENT_DATA_DIR="{install_dir / "agent_data"}"\n'
-            f'export RANGE_TEST_SERVER_DATA_DIR="{install_dir / "server_data"}"\n'
+            f'export RTMS_INSTALL_DIR="{install_dir}"\n'
+            f'export RTMS_HOST_DATA_DIR="{install_dir / "host_data"}"\n'
+            f'export RTMS_SERVER_DATA_DIR="{install_dir / "server_data"}"\n'
         ),
         encoding="utf-8",
     )
@@ -347,7 +347,7 @@ printf 'SERVER_DATA:%s\\n' "${RANGE_TEST_SERVER_DATA_DIR:-}"
         ["--host", "127.0.0.1"],
         cwd=tmp_path,
         home=tmp_path / "home",
-        extra_env={"RANGE_TEST_INSTALL_DIR": str(install_dir)},
+        extra_env={"RTMS_INSTALL_DIR": str(install_dir)},
     )
 
     assert result.returncode == 0, result.stderr

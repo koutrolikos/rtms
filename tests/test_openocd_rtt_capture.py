@@ -5,25 +5,25 @@ from pathlib import Path
 
 import pytest
 
-from agent.app.core.config import AgentSettings
-from agent.app.executors.openocd_rtt_capture import OpenOcdRttCapture
-from agent.app.storage.local_state import PreparedRoleContext
-from shared.enums import ArtifactOriginType, Role
-from shared.manifest import ArtifactBundleManifest, FlashSpec
-from shared.time_sync import utc_now
+from rtms.host.app.core.config import HostSettings
+from rtms.host.app.executors.openocd_rtt_capture import OpenOcdRttCapture
+from rtms.host.app.storage.local_state import PreparedRoleContext
+from rtms.shared.enums import ArtifactOriginType, Role
+from rtms.shared.manifest import ArtifactBundleManifest, FlashSpec
+from rtms.shared.time_sync import utc_now
 
 
 def test_builtin_capture_uses_adapter_serial_with_normalized_probe_serial(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    settings = AgentSettings(
+    settings = HostSettings(
         server_url="http://172.20.10.3:8000",
-        data_dir=tmp_path / "agent_data",
+        data_dir=tmp_path / "host_data",
     )
     ports = iter([9000, 9001])
     monkeypatch.setattr(
-        "agent.app.executors.openocd_rtt_capture._reserve_local_tcp_port",
+        "rtms.host.app.executors.openocd_rtt_capture._reserve_local_tcp_port",
         lambda: next(ports),
     )
     capture = OpenOcdRttCapture(

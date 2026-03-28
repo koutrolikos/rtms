@@ -1,0 +1,35 @@
+{% from "_summary.html" import render_copy_value, render_summary %}
+{% set setup_ready = session.tx_host_id and session.rx_host_id %}
+{% set artifacts_ready = session.tx_artifact_id and session.rx_artifact_id %}
+{% set can_start = setup_ready and artifacts_ready %}
+{% set run_active = session.status in ["preparing_roles", "ready_to_capture", "capturing", "merging", "report_ready", "failed", "cancelled"] %}
+{% set report_ready = report and report.html_storage_path %}
+{% set activity_drawer_open = session.status in ["capturing", "failed", "cancelled"] %}
+{% set stage = namespace(current=1, active_id="stage-configure") %}
+{% if setup_ready %}
+  {% if report_ready or session.status == "report_ready" %}
+    {% set stage.current = 4 %}
+    {% set stage.active_id = "stage-outputs" %}
+  {% elif not artifacts_ready or session.status in ["draft", "selecting_artifacts", "building_artifacts"] %}
+    {% set stage.current = 2 %}
+    {% set stage.active_id = "stage-artifacts" %}
+  {% else %}
+    {% set stage.current = 3 %}
+    {% set stage.active_id = "stage-run" %}
+  {% endif %}
+{% endif %}
+<div id="session-live-shell" class="session-live-shell" data-live-shell>
+  {% include "partials/session_detail/_hero.html" %}
+  {% include "partials/session_detail/_pipeline_nav.html" %}
+
+  <section class="session-layout">
+    <div class="pipeline-main">
+      {% include "partials/session_detail/_stage_configure.html" %}
+      {% include "partials/session_detail/_stage_artifacts.html" %}
+      {% include "partials/session_detail/_stage_run.html" %}
+      {% include "partials/session_detail/_stage_outputs.html" %}
+      {% include "partials/session_detail/_danger_zone.html" %}
+      {% include "partials/session_detail/_activity_drawer.html" %}
+    </div>
+  </section>
+</div>

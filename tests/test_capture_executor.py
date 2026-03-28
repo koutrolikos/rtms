@@ -4,21 +4,21 @@ from pathlib import Path
 
 import pytest
 
-from agent.app.core.config import AgentSettings
-from agent.app.executors.capture import RunningCapture
-from agent.app.services.api_client import ServerConnectionError
-from agent.app.services.runtime import AgentRuntime
-from agent.app.storage.local_state import LocalStateStore, PreparedRoleContext
-from shared.enums import ArtifactOriginType, RawArtifactType, Role, StopMode
-from shared.manifest import ArtifactBundleManifest, FlashSpec
-from shared.schemas import JobResult, StartCapturePayload
-from shared.time_sync import utc_now
+from rtms.host.app.core.config import HostSettings
+from rtms.host.app.executors.capture import RunningCapture
+from rtms.host.app.services.api_client import ServerConnectionError
+from rtms.host.app.services.runtime import HostRuntime
+from rtms.host.app.storage.local_state import LocalStateStore, PreparedRoleContext
+from rtms.shared.enums import ArtifactOriginType, RawArtifactType, Role, StopMode
+from rtms.shared.manifest import ArtifactBundleManifest, FlashSpec
+from rtms.shared.schemas import JobResult, StartCapturePayload
+from rtms.shared.time_sync import utc_now
 
 
 def test_simulated_capture_writes_human_and_machine_logs(tmp_path: Path) -> None:
-    settings = AgentSettings(
+    settings = HostSettings(
         server_url="http://172.20.10.3:8000",
-        data_dir=tmp_path / "agent_data",
+        data_dir=tmp_path / "host_data",
         capture={"simulate_capture": True},
     )
     state_store = LocalStateStore(tmp_path / "state")
@@ -54,9 +54,9 @@ def test_capture_uses_builtin_openocd_when_command_template_missing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    settings = AgentSettings(
+    settings = HostSettings(
         server_url="http://172.20.10.3:8000",
-        data_dir=tmp_path / "agent_data",
+        data_dir=tmp_path / "host_data",
     )
     state_store = LocalStateStore(tmp_path / "state")
     invoked: list[str] = []
@@ -89,11 +89,11 @@ def test_capture_uses_builtin_openocd_when_command_template_missing(
 
 
 def test_runtime_uploads_machine_rtt_artifact_after_capture(tmp_path: Path) -> None:
-    settings = AgentSettings(
+    settings = HostSettings(
         server_url="http://172.20.10.3:8000",
-        data_dir=tmp_path / "agent_data",
+        data_dir=tmp_path / "host_data",
     )
-    runtime = AgentRuntime(settings)
+    runtime = HostRuntime(settings)
     context = _prepared_context(tmp_path, Role.RX)
     runtime.state_store.save_context(context)
     _write_session_files(context, include_capture_logs=True)
@@ -132,7 +132,7 @@ def test_runtime_uploads_machine_rtt_artifact_after_capture(tmp_path: Path) -> N
     assert RawArtifactType.RTT_LOG in artifact_types
     assert RawArtifactType.RTT_MACHINE_LOG in artifact_types
     assert RawArtifactType.CAPTURE_COMMAND_LOG in artifact_types
-    assert RawArtifactType.AGENT_EVENT_LOG in artifact_types
+    assert RawArtifactType.HOST_EVENT_LOG in artifact_types
     assert RawArtifactType.TIMING_SAMPLES in artifact_types
     assert reported_results[0][0] == "job-1"
     assert not (settings.sessions_root / context.session_id / Role.RX.value.lower()).exists()
@@ -141,11 +141,11 @@ def test_runtime_uploads_machine_rtt_artifact_after_capture(tmp_path: Path) -> N
 
 
 def test_cleanup_sweep_uploads_terminal_session_logs_and_removes_local_state(tmp_path: Path) -> None:
-    settings = AgentSettings(
+    settings = HostSettings(
         server_url="http://172.20.10.3:8000",
-        data_dir=tmp_path / "agent_data",
+        data_dir=tmp_path / "host_data",
     )
-    runtime = AgentRuntime(settings)
+    runtime = HostRuntime(settings)
     context = _prepared_context(tmp_path, Role.TX)
     runtime.state_store.save_context(context)
     _write_session_files(context, include_capture_logs=True)
@@ -167,7 +167,7 @@ def test_cleanup_sweep_uploads_terminal_session_logs_and_removes_local_state(tmp
 
     artifact_types = [item["artifact_type"] for item in uploads]
     assert RawArtifactType.OPENOCD_LOG in artifact_types
-    assert RawArtifactType.AGENT_EVENT_LOG in artifact_types
+    assert RawArtifactType.HOST_EVENT_LOG in artifact_types
     assert RawArtifactType.TIMING_SAMPLES in artifact_types
     assert RawArtifactType.RTT_LOG in artifact_types
     assert RawArtifactType.RTT_MACHINE_LOG in artifact_types
@@ -178,11 +178,11 @@ def test_cleanup_sweep_uploads_terminal_session_logs_and_removes_local_state(tmp
 
 
 def test_cleanup_sweep_deletes_local_session_when_server_session_missing(tmp_path: Path) -> None:
-    settings = AgentSettings(
+    settings = HostSettings(
         server_url="http://172.20.10.3:8000",
-        data_dir=tmp_path / "agent_data",
+        data_dir=tmp_path / "host_data",
     )
-    runtime = AgentRuntime(settings)
+    runtime = HostRuntime(settings)
     context = _prepared_context(tmp_path, Role.RX)
     runtime.state_store.save_context(context)
     _write_session_files(context, include_capture_logs=False)
@@ -209,11 +209,11 @@ def test_cleanup_sweep_deletes_local_session_when_server_session_missing(tmp_pat
 
 
 def test_cleanup_sweep_keeps_local_state_when_server_is_unreachable(tmp_path: Path) -> None:
-    settings = AgentSettings(
+    settings = HostSettings(
         server_url="http://172.20.10.3:8000",
-        data_dir=tmp_path / "agent_data",
+        data_dir=tmp_path / "host_data",
     )
-    runtime = AgentRuntime(settings)
+    runtime = HostRuntime(settings)
     context = _prepared_context(tmp_path, Role.TX)
     runtime.state_store.save_context(context)
     _write_session_files(context, include_capture_logs=False)
@@ -235,9 +235,9 @@ def test_cleanup_sweep_keeps_local_state_when_server_is_unreachable(tmp_path: Pa
 
 
 def _prepared_context(tmp_path: Path, role: Role) -> PreparedRoleContext:
-    agent_root = tmp_path / "agent_data"
-    work_dir = agent_root / "sessions" / "session-1" / role.value.lower()
-    bundle_path = agent_root / "downloads" / "session-1" / f"{role.value.lower()}_artifact-1.zip"
+    host_root = tmp_path / "host_data"
+    work_dir = host_root / "sessions" / "session-1" / role.value.lower()
+    bundle_path = host_root / "downloads" / "session-1" / f"{role.value.lower()}_artifact-1.zip"
     return PreparedRoleContext(
         session_id="session-1",
         role_run_id=f"role-run-{role.value.lower()}",
@@ -255,7 +255,7 @@ def _prepared_context(tmp_path: Path, role: Role) -> PreparedRoleContext:
             flash=FlashSpec(elf_path="firmware.elf", flash_image_path="firmware.elf"),
         ),
         openocd_log_path=str(work_dir / "openocd.log"),
-        event_log_path=str(work_dir / "agent_events.jsonl"),
+        event_log_path=str(work_dir / "host_events.jsonl"),
         timing_samples_path=str(work_dir / "timing_samples.json"),
     )
 

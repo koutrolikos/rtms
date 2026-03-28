@@ -1,0 +1,117 @@
+      <section
+        class="pipeline-stage {% if stage.current == 2 %}is-open{% endif %}"
+        id="stage-artifacts"
+        data-pipeline-stage
+        data-stage-status="{% if stage.current == 2 %}active{% elif artifacts_ready %}complete{% else %}pending{% endif %}"
+      >
+        <header class="pipeline-stage-head">
+          <div class="pipeline-stage-heading">
+            <div class="pipeline-stage-title">
+              <span class="pipeline-step-number">2</span>
+              <div>
+                <h3>Artifacts</h3>
+              </div>
+            </div>
+            <div class="pipeline-stage-meta">
+              <span class="pipeline-pill {% if artifacts_ready %}ready{% else %}pending{% endif %}">
+                {{ "ready" if artifacts_ready else "pending" }}
+              </span>
+            </div>
+          </div>
+        </header>
+        <div class="pipeline-stage-body">
+          <article class="panel session-build-panel">
+            <div class="panel-section-grid">
+              <section class="panel-section">
+                <div class="panel-section-head">
+                  <h4>Build</h4>
+                </div>
+                <form method="post" action="/sessions/{{ session.id }}/builds" class="stack" id="session-build-form">
+                  <input type="hidden" name="build_config_json" id="build-config-json" />
+                  <div class="grid two build-host-grid">
+                    <label>
+                      <span>Target Slot</span>
+                      <select name="role" id="build-role" required>
+                        <option value="TX" {% if not session.tx_artifact_id and session.rx_artifact_id %}selected{% endif %}>TX Slot</option>
+                        <option value="RX" {% if session.tx_artifact_id and not session.rx_artifact_id %}selected{% endif %}>RX Slot</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Build Host</span>
+                      <select name="build_host_id" required>
+                        <option value="">Select host</option>
+                        {% for host in hosts %}
+                        {% if host.capabilities.build_capable %}
+                        <option value="{{ host.id }}">{{ host.label or host.name }}</option>
+                        {% endif %}
+                        {% endfor %}
+                      </select>
+                    </label>
+                  </div>
+                  <p
+                    class="field-hint build-role-hint"
+                    id="build-role-hint"
+                    data-tx-artifact="{{ session.tx_artifact_id | short_id if session.tx_artifact_id else '' }}"
+                    data-rx-artifact="{{ session.rx_artifact_id | short_id if session.rx_artifact_id else '' }}"
+                  >Build outputs auto-assign to the selected slot when ready.</p>
+                  <label class="build-repo-field">
+                    <span>Repo</span>
+                    <select name="repo_id" id="build-repo-id" required>
+                      <option value="">Select repo</option>
+                      {% for repo in repos %}
+                      <option value="{{ repo.id }}" {% if repo.id == "high-altitude-cc" %}selected{% endif %}>{{ repo.display_name }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <div class="stack build-browser build-search-panel">
+                    <label>
+                      <span>Commit Search</span>
+                      <div class="inline-form">
+                        <input type="text" id="commit-query" data-enter-click="search-commits" placeholder="Search by branch, tag, or SHA prefix" />
+                        <button type="button" class="secondary" id="search-commits">Search Commits</button>
+                      </div>
+                    </label>
+                    <div id="commit-results" class="build-commit-results"></div>
+                  </div>
+                  <label class="build-exact-sha-field">
+                    <span>Exact Git SHA</span>
+                    <div class="inline-form">
+                      <input
+                        type="text"
+                        name="git_sha"
+                        id="build-git-sha"
+                        data-enter-click="load-build-config"
+                        required
+                        placeholder="40-char SHA or branch-qualified SHA"
+                      />
+                      <button type="button" class="secondary" id="load-build-config">Load Config</button>
+                    </div>
+                  </label>
+                  <p class="muted build-config-status" id="build-config-status">Load a commit before queueing the build.</p>
+                  <p class="muted build-policy-note">Human-readable RTT is always disabled for these builds. Machine telemetry is always enabled, and packet detail is enforced for report-ready captures.</p>
+                  <div class="grid two build-telemetry-grid">
+                    <label>
+                      <span>Machine Detail</span>
+                      <input type="text" value="Packet" readonly aria-readonly="true" />
+                    </label>
+                    <label>
+                      <span>Stat Period (ms)</span>
+                      <input type="number" id="build-machine-log-stat-period-ms" min="0" step="1" placeholder="Default" />
+                    </label>
+                  </div>
+                  <p class="field-hint build-telemetry-hint">UI builds always use packet detail so generated reports have per-packet telemetry.</p>
+                  <div class="stack build-summary-panel">
+                    <div class="build-summary-meta">
+                      <span>Build Summary</span>
+                      <span class="build-summary-badge" aria-hidden="true">System generated</span>
+                    </div>
+                    <p class="muted build-summary-note">This preview is not editable. Load a commit to refresh values.</p>
+                    <div id="build-config-summary" class="build-summary-box" role="status" aria-live="polite" aria-readonly="true">Load a commit to inspect the resolved GitHub-build defaults.</div>
+                  </div>
+                  <button type="submit" id="queue-build-button" disabled>Queue Build</button>
+                </form>
+              </section>
+            </div>
+          </article>
+        </div>
+      </section>

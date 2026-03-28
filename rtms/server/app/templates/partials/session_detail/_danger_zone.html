@@ -1,0 +1,11 @@
+      {% if can_delete_session %}
+      <article class="panel">
+        <div class="panel-head">
+          <h3>Danger Zone</h3>
+        </div>
+        <p class="muted">Delete this terminal session and remove its metadata, raw logs, reports, and remaining stored artifacts.</p>
+        <form method="post" action="/sessions/{{ session.id }}/delete" onsubmit="return confirm('Delete this terminal session and all stored data?');">
+          <button type="submit" class="button danger">Delete Session</button>
+        </form>
+      </article>
+      {% endif %}

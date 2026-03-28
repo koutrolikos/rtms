@@ -1,0 +1,64 @@
+  <section class="hero session-hero" data-refresh-flash>
+    <div class="session-hero-main">
+      <div class="session-hero-topline">
+        <div class="session-hero-heading">
+          <p class="eyebrow">Session</p>
+          <h2>{{ session.name }}</h2>
+        </div>
+        <div class="hero-status session-hero-status">
+          <div class="session-hero-status-row">
+            <span class="chip chip-{{ session.status }}">{{ session.status | humanize_token }}</span>
+            <span class="session-hero-updated">Updated <span data-live-updated-at>{{ last_updated_at | human_relative_time if last_updated_at else "waiting" }}</span></span>
+          </div>
+          {% if session.status == "building_artifacts" %}
+          <div class="session-build-progress" role="status" aria-live="polite" aria-label="Building artifacts">
+            <span class="session-build-progress-label">Building artifacts and waiting for ready bundles.</span>
+            <div class="session-build-progress-track" aria-hidden="true">
+              <span class="session-build-progress-fill"></span>
+            </div>
+          </div>
+          {% endif %}
+          {% if report and report.html_storage_path %}
+          <div class="session-hero-status-actions">
+            <a class="button secondary" href="/sessions/{{ session.id }}/report">View Report</a>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      <div class="session-hero-next-action">
+        <div class="session-hero-next-action-copy">
+          <p class="eyebrow">Next Required Action</p>
+          <h3>{{ next_action.title }}</h3>
+          <p class="muted">{{ next_action.detail }}</p>
+        </div>
+        <div class="session-hero-next-action-actions">
+          <a class="button {% if next_action.kind == 'danger' %}danger{% elif next_action.kind in ['pending', 'success', 'live'] %}secondary{% endif %}" href="{{ next_action.href }}">
+            {{ next_action.action_label }}
+          </a>
+          {% if report_ready %}
+          <a class="button secondary" href="{{ raw_artifacts_page_url }}">Open Raw Artifacts</a>
+          {% endif %}
+        </div>
+      </div>
+      <div class="hero-meta session-hero-meta">
+        <div class="hero-meta-item session-meta-item session-meta-item-id">
+          <span class="hero-meta-label">Session ID</span>
+          {{ render_copy_value(session.id, session.id | short_id, "session id", true) }}
+        </div>
+        <div class="hero-meta-item session-meta-item">
+          <span class="hero-meta-label">Location</span>
+          <span>{{ session.location_text or "Not set" }}</span>
+        </div>
+        <div class="hero-meta-item session-meta-item">
+          <span class="hero-meta-label">Duration</span>
+          <span>
+            {% if session.stop_mode == "manual" %}
+            Manual stop
+            {% else %}
+            {{ session.selected_duration_minutes or session.default_duration_minutes }} min
+            {% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+  </section>

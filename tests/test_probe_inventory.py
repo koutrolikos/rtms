@@ -1,4 +1,4 @@
-from agent.app.services.probes import (
+from rtms.host.app.services.probes import (
     ConnectedProbe,
     _discover_macos_probes,
     _parse_ioreg_usb_host_devices,
@@ -9,7 +9,7 @@ from agent.app.services.probes import (
 
 def test_scan_probe_inventory_auto_selects_single_probe(monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent.app.services.probes._discover_connected_probes",
+        "rtms.host.app.services.probes._discover_connected_probes",
         lambda: [ConnectedProbe(serial="123456", description="ST-Link/V2-1")],
     )
 
@@ -22,7 +22,7 @@ def test_scan_probe_inventory_auto_selects_single_probe(monkeypatch) -> None:
 
 def test_scan_probe_inventory_prefers_configured_probe(monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent.app.services.probes._discover_connected_probes",
+        "rtms.host.app.services.probes._discover_connected_probes",
         lambda: [ConnectedProbe(serial="123456", description="ST-Link/V2-1")],
     )
 
@@ -39,7 +39,7 @@ def test_normalize_probe_serial_converts_non_printable_stlink_bytes_to_hex() -> 
 
 def test_scan_probe_inventory_normalizes_probe_serials_before_selection(monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent.app.services.probes._discover_connected_probes",
+        "rtms.host.app.services.probes._discover_connected_probes",
         lambda: [ConnectedProbe(serial='Tÿp\x06fuUU\x13D"\x87', description="ST-Link/V2-1")],
     )
 
@@ -53,7 +53,7 @@ def test_scan_probe_inventory_normalizes_probe_serials_before_selection(monkeypa
 
 def test_scan_probe_inventory_requires_explicit_choice_when_multiple_probes_detected(monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent.app.services.probes._discover_connected_probes",
+        "rtms.host.app.services.probes._discover_connected_probes",
         lambda: [
             ConnectedProbe(serial="123456", description="ST-Link A"),
             ConnectedProbe(serial="654321", description="ST-Link B"),
@@ -116,7 +116,7 @@ def test_discover_macos_probes_falls_back_to_ioreg_when_system_profiler_is_empty
             )
         raise AssertionError(f"unexpected command: {command}")
 
-    monkeypatch.setattr("agent.app.services.probes.subprocess.run", fake_run)
+    monkeypatch.setattr("rtms.host.app.services.probes.subprocess.run", fake_run)
 
     probes = _discover_macos_probes()
 

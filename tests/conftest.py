@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from server.app.models.entities import Base
+from rtms.server.app.models.entities import Base
 
 
 @pytest.fixture()

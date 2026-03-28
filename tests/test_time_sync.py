@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from shared.time_sync import apply_offset, estimate_offset
+from rtms.shared.time_sync import apply_offset, estimate_offset
 
 
 def test_estimate_offset_uses_midpoint() -> None:

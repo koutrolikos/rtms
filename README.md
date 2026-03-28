@@ -23,26 +23,26 @@ What bootstrap does now:
 
 - checks required dependencies
 - installs missing dependencies
-- clones/updates RTMS into `~/rtms-agent`
-- writes runtime env file (`.agent-env.sh` or `.agent-env.ps1`)
+- clones/updates RTMS into `~/rtms-host`
+- writes runtime env file (`.rtms-env.sh` or `.rtms-env.ps1`)
 - does not create a virtual environment
 
 macOS:
 
 ```bash
-./scripts/bootstrap_agent_macos.sh --server-url http://172.20.10.3:8000
+./scripts/bootstrap_host_macos.sh --server-url http://172.20.10.3:8000
 ```
 
 Linux:
 
 ```bash
-./scripts/bootstrap_agent_linux.sh --server-url http://172.20.10.3:8000
+./scripts/bootstrap_host_linux.sh --server-url http://172.20.10.3:8000
 ```
 
 Windows PowerShell:
 
 ```powershell
-.\scripts\bootstrap_agent_windows.ps1 -ServerUrl http://172.20.10.3:8000
+.\scripts\bootstrap_host_windows.ps1 -ServerUrl http://172.20.10.3:8000
 ```
 
 ### 4) Create venv and install RTMS package
@@ -50,50 +50,50 @@ Windows PowerShell:
 macOS:
 
 ```bash
-cd ~/rtms-agent
+cd ~/rtms-host
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -e .
-source .agent-env.sh
+source .rtms-env.sh
 ```
 
 Linux:
 
 ```bash
-cd ~/rtms-agent
+cd ~/rtms-host
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -e .
-source .agent-env.sh
+source .rtms-env.sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-cd ~/rtms-agent
+cd ~/rtms-host
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -e .
-. .\.agent-env.ps1
+. .\.rtms-env.ps1
 ```
 
 ### 5) Run
 
-Start agent:
+Start host:
 
 macOS/Linux:
 
 ```bash
-./.venv/bin/range-test-agent run
+./.venv/bin/rtms-host run
 ```
 
 Windows PowerShell:
 
 ```powershell
-.\.venv\Scripts\range-test-agent.exe run
+.\.venv\Scripts\rtms-host.exe run
 ```
 
 Start server (optional on this host):
@@ -101,19 +101,19 @@ Start server (optional on this host):
 macOS/Linux:
 
 ```bash
-./.venv/bin/range-test-server run
+./.venv/bin/rtms-server run
 ```
 
 Windows PowerShell:
 
 ```powershell
-.\.venv\Scripts\range-test-server.exe run
+.\.venv\Scripts\rtms-server.exe run
 ```
 
 Distributed RF range-test orchestration MVP with:
 
 - a FastAPI control plane
-- polling Python host agents
+- polling Python hosts
 - session-scoped artifact storage
 - OpenOCD-compatible flash/verify orchestration
 - capture coordination across TX/RX hosts
@@ -121,36 +121,36 @@ Distributed RF range-test orchestration MVP with:
 
 ## One Command Sanity Check
 
-From the agent machine:
+From the host machine:
 
 ```bash
 curl http://172.20.10.3:8000/healthz
 ```
 
-You should get a healthy response before starting the agent.
+You should get a healthy response before starting the host.
 
 ## Authentication
 
-RTMS now supports optional HTTP Basic auth for both the web UI and the agent API.
+RTMS now supports optional HTTP Basic auth for both the web UI and the host API.
 
 Enable it on the server:
 
 ```bash
-export RANGE_TEST_AUTH_USERNAME="rtms"
-export RANGE_TEST_AUTH_PASSWORD="change-me"
+export RTMS_AUTH_USERNAME="rtms"
+export RTMS_AUTH_PASSWORD="change-me"
 ```
 
-When auth is enabled, configure every agent with matching credentials:
+When auth is enabled, configure every host with matching credentials:
 
 ```bash
-export RANGE_TEST_SERVER_USERNAME="rtms"
-export RANGE_TEST_SERVER_PASSWORD="change-me"
+export RTMS_SERVER_USERNAME="rtms"
+export RTMS_SERVER_PASSWORD="change-me"
 ```
 
 Notes:
 
 - `/healthz` remains open for simple liveness checks.
-- All other operator and agent endpoints require Basic auth.
+- All other operator and host endpoints require Basic auth.
 - Browser access will prompt for credentials automatically.
 - CLI checks can use `curl -u rtms:change-me http://172.20.10.3:8000/sessions`.
 
@@ -158,11 +158,11 @@ Notes:
 
 Install only what you need for the capabilities enabled on that host.
 
-- Core agent (always): Python 3.11+, pip/venv, network access to server
-- Build-capable agent: `git` plus repo-specific build tools
+- Core host (always): Python 3.11+, pip/venv, network access to server
+- Build-capable host: `git` plus repo-specific build tools
 - Current High-Altitude-CC build recipe: `cmake`, `arm-none-eabi-gcc`
-- Flash-capable agent: `openocd` plus correct target/interface scripts
-- Capture-capable agent: built-in OpenOCD RTT capture shipped with the agent
+- Flash-capable host: `openocd` plus correct target/interface scripts
+- Capture-capable host: built-in OpenOCD RTT capture shipped with the host
 
 Built-in capture defaults:
 
@@ -171,30 +171,30 @@ Built-in capture defaults:
 - capture binary `MLOG` RTT data from channel `1` into `rtt.rttbin`
 - capture OpenOCD stdout/stderr into `capture-command.log`
 
-`RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` remains available as an override if you need a custom capture flow.
+`RTMS_CAPTURE_COMMAND_TEMPLATE` remains available as an override if you need a custom capture flow.
 
 Minimal capability env vars:
 
 ```bash
-export RANGE_TEST_AGENT_BUILD_CAPABLE=1
-export RANGE_TEST_AGENT_FLASH_CAPABLE=1
-export RANGE_TEST_AGENT_CAPTURE_CAPABLE=1
+export RTMS_HOST_BUILD_CAPABLE=1
+export RTMS_HOST_FLASH_CAPABLE=1
+export RTMS_HOST_CAPTURE_CAPABLE=1
 ```
 
 If this host should only build and never flash:
 
 ```bash
-export RANGE_TEST_AGENT_BUILD_CAPABLE=1
-export RANGE_TEST_AGENT_FLASH_CAPABLE=0
-export RANGE_TEST_AGENT_CAPTURE_CAPABLE=0
+export RTMS_HOST_BUILD_CAPABLE=1
+export RTMS_HOST_FLASH_CAPABLE=0
+export RTMS_HOST_CAPTURE_CAPABLE=0
 ```
 
 If this host should only flash/capture and never build:
 
 ```bash
-export RANGE_TEST_AGENT_BUILD_CAPABLE=0
-export RANGE_TEST_AGENT_FLASH_CAPABLE=1
-export RANGE_TEST_AGENT_CAPTURE_CAPABLE=1
+export RTMS_HOST_BUILD_CAPABLE=0
+export RTMS_HOST_FLASH_CAPABLE=1
+export RTMS_HOST_CAPTURE_CAPABLE=1
 ```
 
 1. Create a virtual environment and install the package:
@@ -208,59 +208,59 @@ pip install -e '.[dev]'
 2. Start the server:
 
 ```bash
-range-test-server
+rtms-server
 ```
 
 The server listens on all interfaces by default and advertises a LAN-facing URL.
-If you need to force the public address used by agents, set:
+If you need to force the public address used by hosts, set:
 
 ```bash
-export RANGE_TEST_SERVER_PUBLIC_BASE_URL="http://172.20.10.3:8000"
+export RTMS_SERVER_PUBLIC_BASE_URL="http://172.20.10.3:8000"
 ```
 
 By default, the bootstrap-generated env file pins:
 
-- `RANGE_TEST_AGENT_DATA_DIR=~/rtms-agent/agent_data`
-- `RANGE_TEST_SERVER_DATA_DIR=~/rtms-agent/server_data`
+- `RTMS_HOST_DATA_DIR=~/rtms-host/host_data`
+- `RTMS_SERVER_DATA_DIR=~/rtms-host/server_data`
 
 If you do a manual editable install instead of bootstrap, set those explicitly if you do
 not want runtime data created relative to the directory where you launch the command.
 
-1. Start an agent:
+1. Start an host:
 
 ```bash
-export RANGE_TEST_SERVER_URL="http://172.20.10.3:8000"
-range-test-agent run
+export RTMS_SERVER_URL="http://172.20.10.3:8000"
+rtms-host run
 ```
 
-If the agent is running on the same machine as the server during development,
+If the host is running on the same machine as the server during development,
 use:
 
 ```bash
-export RANGE_TEST_SERVER_URL="http://127.0.0.1:8000"
+export RTMS_SERVER_URL="http://127.0.0.1:8000"
 ```
 
 If server auth is enabled, also set:
 
 ```bash
-export RANGE_TEST_SERVER_USERNAME="rtms"
-export RANGE_TEST_SERVER_PASSWORD="change-me"
+export RTMS_SERVER_USERNAME="rtms"
+export RTMS_SERVER_PASSWORD="change-me"
 ```
 
 On Windows PowerShell:
 
 ```powershell
-$env:RANGE_TEST_SERVER_URL = "http://172.20.10.3:8000"
-$env:RANGE_TEST_OPENOCD_TARGET_CFG = "target/stm32g4x.cfg"
-range-test-agent run
+$env:RTMS_SERVER_URL = "http://172.20.10.3:8000"
+$env:RTMS_OPENOCD_TARGET_CFG = "target/stm32g4x.cfg"
+rtms-host run
 ```
 
-If the Windows agent reports `WinError 2` while launching OpenOCD, the binary is
-not installed or not on `PATH`. Set `RANGE_TEST_OPENOCD_BIN` to the full binary
+If the Windows host reports `WinError 2` while launching OpenOCD, the binary is
+not installed or not on `PATH`. Set `RTMS_OPENOCD_BIN` to the full binary
 path, for example:
 
 ```powershell
-$env:RANGE_TEST_OPENOCD_BIN = "C:\openocd\xpack-openocd-0.12.0-7\bin\openocd.exe"
+$env:RTMS_OPENOCD_BIN = "C:\openocd\xpack-openocd-0.12.0-7\bin\openocd.exe"
 $env:OPENOCD_SCRIPTS = "C:\openocd\xpack-openocd-0.12.0-7\openocd\scripts"
 ```
 
@@ -272,13 +272,13 @@ $env:OPENOCD_SCRIPTS = "C:\openocd\xpack-openocd-0.12.0-7\openocd\scripts"
 curl http://<server-lan-ip>:8000/healthz
 ```
 
-If the Windows agent shows `WinError 10061`, it usually means one of these:
+If the Windows host shows `WinError 10061`, it usually means one of these:
 
-- `RANGE_TEST_SERVER_URL` still points to `127.0.0.1`, `localhost`, or `0.0.0.0`
+- `RTMS_SERVER_URL` still points to `127.0.0.1`, `localhost`, or `0.0.0.0`
 - the server machine firewall is blocking inbound TCP `8000`
-- the agent is using the wrong LAN IP for the server machine
+- the host is using the wrong LAN IP for the server machine
 
-That first point only applies to a remote agent. For same-machine development,
+That first point only applies to a remote host. For same-machine development,
 `http://127.0.0.1:8000` is valid.
 
 The bundled `High-Altitude-CC` example repo is built from the session page by:
@@ -286,19 +286,19 @@ The bundled `High-Altitude-CC` example repo is built from the session page by:
 - choosing an exact git commit
 - loading the commit's `Core/Inc/app_config.h` defaults from GitHub
 - selecting TX or RX plus the exposed firmware config fields
-- queueing the server-owned build job on a build-capable agent
+- queueing the server-owned build job on a build-capable host
 
-The agent builds that repo through
-`range-test-agent build-high-altitude-cc --source . --build-dir build/debug`
+The host builds that repo through
+`rtms-host build-high-altitude-cc --source . --build-dir build/debug`
 with generated role/build-config JSON from the session form, patches
 `Core/Inc/app_config.h` inside the clean clone, uploads the bundle and build
 log, then deletes its local checkout and build files for that artifact.
 
-If the agent shows `SSL: WRONG_VERSION_NUMBER`, it is almost certainly using
+If the host shows `SSL: WRONG_VERSION_NUMBER`, it is almost certainly using
 `https://<server-ip>:8000` against this plain HTTP server. Use `http://`, for example:
 
 ```powershell
-$env:RANGE_TEST_SERVER_URL = "http://172.20.10.3:8000"
+$env:RTMS_SERVER_URL = "http://172.20.10.3:8000"
 ```
 
 ## Prebuilt Artifact Upload
@@ -308,7 +308,7 @@ you can upload an existing ELF as a
 session-scoped artifact:
 
 ```bash
-range-test-agent upload-prebuilt \
+rtms-host upload-prebuilt \
   --session-id <session-id> \
   --role TX \
   --elf-path ~/High-Altitude-CC/build/tx/debug/High-Altitude-CC.elf \
@@ -318,7 +318,7 @@ range-test-agent upload-prebuilt \
 ```
 
 ```bash
-range-test-agent upload-prebuilt \
+rtms-host upload-prebuilt \
   --session-id <session-id> \
   --role RX \
   --elf-path ~/High-Altitude-CC/build/rx/debug/High-Altitude-CC.elf \
@@ -330,4 +330,4 @@ range-test-agent upload-prebuilt \
 The command prints the created `artifact_id`. After upload, assign the ready TX
 and RX artifacts from the session page.
 
-See [architecture.md](/Users/odysseaskoutrolikos/rtms/architecture.md), [agent.md](/Users/odysseaskoutrolikos/rtms/agent.md), [mvp_scope.md](/Users/odysseaskoutrolikos/rtms/mvp_scope.md), [docs/developer_setup.md](/Users/odysseaskoutrolikos/rtms/docs/developer_setup.md), and [docs/operator_guide.md](/Users/odysseaskoutrolikos/rtms/docs/operator_guide.md).
+See [architecture.md](/Users/odysseaskoutrolikos/rtms/architecture.md), [host.md](/Users/odysseaskoutrolikos/rtms/host.md), [mvp_scope.md](/Users/odysseaskoutrolikos/rtms/mvp_scope.md), [docs/developer_setup.md](/Users/odysseaskoutrolikos/rtms/docs/developer_setup.md), and [docs/operator_guide.md](/Users/odysseaskoutrolikos/rtms/docs/operator_guide.md).

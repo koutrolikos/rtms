@@ -1,0 +1,2 @@
+"""Host local storage."""
+

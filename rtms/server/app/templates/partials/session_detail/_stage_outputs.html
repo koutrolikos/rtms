@@ -1,0 +1,92 @@
+      <section
+        class="pipeline-stage {% if stage.current == 4 %}is-open{% endif %}"
+        id="stage-outputs"
+        data-pipeline-stage
+        data-stage-status="{% if stage.current == 4 %}active{% elif report_ready %}complete{% else %}pending{% endif %}"
+      >
+        <header class="pipeline-stage-head">
+          <div class="pipeline-stage-heading">
+            <div class="pipeline-stage-title">
+              <span class="pipeline-step-number">4</span>
+              <div>
+                <h3>Outputs</h3>
+              </div>
+            </div>
+            <div class="pipeline-stage-meta">
+              <span class="pipeline-pill {% if report_ready %}ready{% else %}pending{% endif %}">
+                {{ "ready" if report_ready else "pending" }}
+              </span>
+            </div>
+          </div>
+        </header>
+        <div class="pipeline-stage-body">
+          <div class="stack">
+            <article class="panel">
+              <div class="panel-head">
+                <h3>Artifacts</h3>
+              </div>
+              <div class="table-shell">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Status</th>
+                      <th>Role</th>
+                      <th>Origin</th>
+                      <th>SHA</th>
+                      <th>Metadata</th>
+                      <th>Download</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for artifact in artifacts %}
+                    <tr>
+                      <td>{{ render_copy_value(artifact.id, artifact.id | short_id, "artifact id", true) }}</td>
+                      <td>{{ artifact.status | humanize_token }}</td>
+                      <td>{{ artifact.role_compatibility | join(", ") if artifact.role_compatibility else "-" }}</td>
+                      <td>{{ artifact.origin_type | humanize_token }}</td>
+                      <td>{{ render_copy_value(artifact.git_sha, artifact.git_sha | short_sha if artifact.git_sha else None, "git sha", true) }}</td>
+                      <td>{{ render_summary(summarize_artifact_metadata(artifact.metadata_payload)) }}</td>
+                      <td>{% if artifact.storage_path %}<a href="/api/artifacts/{{ artifact.id }}/download">bundle</a>{% else %}-{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" class="muted">No artifacts yet.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <h3>Raw Artifacts</h3>
+                <a class="button secondary" href="{{ raw_artifacts_page_url }}">Full Artifact View</a>
+              </div>
+              <div class="table-shell table-shell-stack">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th>Role</th>
+                      <th>Size</th>
+                      <th>Download</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for item in raw_artifacts %}
+                    <tr>
+                      <td data-cell-label="Type">{{ item.type | humanize_token }}</td>
+                      <td data-cell-label="Role">{{ item.role or "session" }}</td>
+                      <td data-cell-label="Size">{{ item.size_bytes | human_bytes }}</td>
+                      <td data-cell-label="Download"><a href="/api/raw-artifacts/{{ item.id }}/download">{{ item.storage_path | basename }}</a></td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="muted">No raw artifacts uploaded yet.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>

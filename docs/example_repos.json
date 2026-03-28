@@ -7,7 +7,7 @@
     "api_url": "https://api.github.com",
     "default_branch": "dev",
     "build_recipe": {
-      "build_command": "range-test-agent build-high-altitude-cc --source . --build-dir build/debug",
+      "build_command": "rtms-host build-high-altitude-cc --source . --build-dir build/debug",
       "artifact_globs": [
         "build/debug/HighAltitudeCC.elf",
         "build/debug/HighAltitudeCC.hex",

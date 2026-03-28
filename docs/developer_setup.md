@@ -16,59 +16,59 @@ cd rtms
 macOS:
 
 ```bash
-./scripts/bootstrap_agent_macos.sh --server-url http://172.20.10.3:8000
+./scripts/bootstrap_host_macos.sh --server-url http://172.20.10.3:8000
 ```
 
 Linux:
 
 ```bash
-./scripts/bootstrap_agent_linux.sh --server-url http://172.20.10.3:8000
+./scripts/bootstrap_host_linux.sh --server-url http://172.20.10.3:8000
 ```
 
 Windows PowerShell:
 
 ```powershell
-.\scripts\bootstrap_agent_windows.ps1 -ServerUrl http://172.20.10.3:8000
+.\scripts\bootstrap_host_windows.ps1 -ServerUrl http://172.20.10.3:8000
 ```
 
 After bootstrap, source the generated env file and run binaries from the venv:
 
 ```bash
-source ~/rtms-agent/.agent-env.sh
-~/rtms-agent/.venv/bin/range-test-server run
-~/rtms-agent/.venv/bin/range-test-agent run
+source ~/rtms-host/.rtms-env.sh
+~/rtms-host/.venv/bin/rtms-server run
+~/rtms-host/.venv/bin/rtms-host run
 ```
 
 On Windows PowerShell:
 
 ```powershell
-. ~/rtms-agent/.agent-env.ps1
-~/rtms-agent/.venv/Scripts/range-test-server.exe run
-~/rtms-agent/.venv/Scripts/range-test-agent.exe run
+. ~/rtms-host/.rtms-env.ps1
+~/rtms-host/.venv/Scripts/rtms-server.exe run
+~/rtms-host/.venv/Scripts/rtms-host.exe run
 ```
 
 ## Fastest Path (Fresh Machine)
 
-If your goal is "start a new agent on a random machine with minimal effort", use one of these exact flows.
+If your goal is "start a new host on a random machine with minimal effort", use one of these exact flows.
 
 ### Script-first path (recommended)
 
 Linux:
 
 ```bash
-./scripts/bootstrap_agent_linux.sh --server-url http://172.20.10.3:8000
+./scripts/bootstrap_host_linux.sh --server-url http://172.20.10.3:8000
 ```
 
 macOS:
 
 ```bash
-./scripts/bootstrap_agent_macos.sh --server-url http://172.20.10.3:8000
+./scripts/bootstrap_host_macos.sh --server-url http://172.20.10.3:8000
 ```
 
 Windows PowerShell:
 
 ```powershell
-.\scripts\bootstrap_agent_windows.ps1 -ServerUrl http://172.20.10.3:8000
+.\scripts\bootstrap_host_windows.ps1 -ServerUrl http://172.20.10.3:8000
 ```
 
 Modes supported by both scripts:
@@ -91,9 +91,9 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 
-export RANGE_TEST_SERVER_URL="http://172.20.10.3:8000"
-export RANGE_TEST_OPENOCD_TARGET_CFG="target/stm32g4x.cfg"
-range-test-agent run
+export RTMS_SERVER_URL="http://172.20.10.3:8000"
+export RTMS_OPENOCD_TARGET_CFG="target/stm32g4x.cfg"
+rtms-host run
 ```
 
 ### Windows (PowerShell)
@@ -109,21 +109,21 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e .
 
-$env:RANGE_TEST_SERVER_URL = "http://172.20.10.3:8000"
-$env:RANGE_TEST_OPENOCD_TARGET_CFG = "target/stm32g4x.cfg"
-range-test-agent run
+$env:RTMS_SERVER_URL = "http://172.20.10.3:8000"
+$env:RTMS_OPENOCD_TARGET_CFG = "target/stm32g4x.cfg"
+rtms-host run
 ```
 
 If OpenOCD is not on PATH:
 
 ```powershell
-$env:RANGE_TEST_OPENOCD_BIN = "C:\openocd\xpack-openocd-0.12.0-7\bin\openocd.exe"
+$env:RTMS_OPENOCD_BIN = "C:\openocd\xpack-openocd-0.12.0-7\bin\openocd.exe"
 $env:OPENOCD_SCRIPTS = "C:\openocd\xpack-openocd-0.12.0-7\openocd\scripts"
 ```
 
 ### One sanity check before `run`
 
-From the agent host:
+From the host host:
 
 ```bash
 curl http://172.20.10.3:8000/healthz
@@ -132,19 +132,19 @@ curl http://172.20.10.3:8000/healthz
 If server auth is enabled, keep using `/healthz` for the anonymous liveness check, then export:
 
 ```bash
-export RANGE_TEST_SERVER_USERNAME="rtms"
-export RANGE_TEST_SERVER_PASSWORD="change-me"
+export RTMS_SERVER_USERNAME="rtms"
+export RTMS_SERVER_PASSWORD="change-me"
 ```
 
-## Dependency Matrix (By Agent Capability)
+## Dependency Matrix (By Host Capability)
 
 Install only what the host will do.
 
-- Core agent (always): Python 3.11+, pip/venv, server network access
+- Core host (always): Python 3.11+, pip/venv, server network access
 - Build-capable: `git` + build tools required by the repo recipe
 - High-Altitude-CC build recipe today: `cmake`, `arm-none-eabi-gcc`
 - Flash-capable: `openocd` + correct interface/target configs
-- Capture-capable: built-in OpenOCD RTT capture shipped with the agent
+- Capture-capable: built-in OpenOCD RTT capture shipped with the host
 
 Built-in capture defaults:
 
@@ -153,30 +153,30 @@ Built-in capture defaults:
 - capture machine `MLOG` RTT channel `1` into `rtt.rttbin`
 - capture OpenOCD stdout/stderr into `capture-command.log`
 
-`RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` remains available as an override for custom capture tools.
+`RTMS_CAPTURE_COMMAND_TEMPLATE` remains available as an override for custom capture tools.
 
 Capability flags:
 
 ```bash
-export RANGE_TEST_AGENT_BUILD_CAPABLE=1
-export RANGE_TEST_AGENT_FLASH_CAPABLE=1
-export RANGE_TEST_AGENT_CAPTURE_CAPABLE=1
+export RTMS_HOST_BUILD_CAPABLE=1
+export RTMS_HOST_FLASH_CAPABLE=1
+export RTMS_HOST_CAPTURE_CAPABLE=1
 ```
 
 Build-only host:
 
 ```bash
-export RANGE_TEST_AGENT_BUILD_CAPABLE=1
-export RANGE_TEST_AGENT_FLASH_CAPABLE=0
-export RANGE_TEST_AGENT_CAPTURE_CAPABLE=0
+export RTMS_HOST_BUILD_CAPABLE=1
+export RTMS_HOST_FLASH_CAPABLE=0
+export RTMS_HOST_CAPTURE_CAPABLE=0
 ```
 
 Flash/capture-only host:
 
 ```bash
-export RANGE_TEST_AGENT_BUILD_CAPABLE=0
-export RANGE_TEST_AGENT_FLASH_CAPABLE=1
-export RANGE_TEST_AGENT_CAPTURE_CAPABLE=1
+export RTMS_HOST_BUILD_CAPABLE=0
+export RTMS_HOST_FLASH_CAPABLE=1
+export RTMS_HOST_CAPTURE_CAPABLE=1
 ```
 
 ## Install
@@ -193,8 +193,8 @@ The server reads repo definitions from `server_data/repos.json` by default.
 
 This build capability is recipe-driven, not generic source compilation. Each
 repo entry must describe a build that works from a clean clone on the build
-agent. If a firmware repo depends on generated IDE outputs, untracked makefiles,
-local toolchain wrappers, or other files that are not present in Git, the agent
+host. If a firmware repo depends on generated IDE outputs, untracked makefiles,
+local toolchain wrappers, or other files that are not present in Git, the host
 build will fail and you should use prebuilt ELF upload instead.
 
 Example:
@@ -230,80 +230,80 @@ The bundled `High-Altitude-CC` example is configured as a single repo entry
 built through:
 
 ```bash
-range-test-agent build-high-altitude-cc --source . --build-dir build/debug --role <tx|rx> --build-config-json <json>
+rtms-host build-high-altitude-cc --source . --build-dir build/debug --role <tx|rx> --build-config-json <json>
 ```
 
 RTMS resolves the operator-selected TX/RX role plus the exposed firmware build
 config into a generated High-Altitude-CC build config JSON payload, patches the
 clean clone's `Core/Inc/app_config.h`, runs the tracked CMake build, uploads the
-build log as a raw artifact, and removes the agent's local build workspace after
+build log as a raw artifact, and removes the host's local build workspace after
 a successful upload.
 
 ## Run Server
 
 ```bash
-range-test-server
+rtms-server
 ```
 
-By default the server binds to `0.0.0.0:8000` and auto-detects a LAN URL for agent-facing links.
+By default the server binds to `0.0.0.0:8000` and auto-detects a LAN URL for host-facing links.
 If the detected address is wrong, set:
 
 ```bash
-export RANGE_TEST_SERVER_PUBLIC_BASE_URL="http://172.20.10.3:8000"
+export RTMS_SERVER_PUBLIC_BASE_URL="http://172.20.10.3:8000"
 ```
 
 Optional HTTP Basic auth:
 
 ```bash
-export RANGE_TEST_AUTH_USERNAME="rtms"
-export RANGE_TEST_AUTH_PASSWORD="change-me"
+export RTMS_AUTH_USERNAME="rtms"
+export RTMS_AUTH_PASSWORD="change-me"
 ```
 
-When enabled, agents must also set matching `RANGE_TEST_SERVER_USERNAME` and
-`RANGE_TEST_SERVER_PASSWORD` values.
+When enabled, hosts must also set matching `RTMS_SERVER_USERNAME` and
+`RTMS_SERVER_PASSWORD` values.
 
 When the machine was bootstrapped with the provided scripts, runtime state is pinned under
 the install directory by default:
 
-- `RANGE_TEST_AGENT_DATA_DIR=<install-dir>/agent_data`
-- `RANGE_TEST_SERVER_DATA_DIR=<install-dir>/server_data`
+- `RTMS_HOST_DATA_DIR=<install-dir>/host_data`
+- `RTMS_SERVER_DATA_DIR=<install-dir>/server_data`
 
-That avoids creating `agent_data/` or `server_data/` in whichever directory the user happened
-to be in when launching `range-test-agent` or `range-test-server`.
+That avoids creating `host_data/` or `server_data/` in whichever directory the user happened
+to be in when launching `rtms-host` or `rtms-server`.
 
 Key env vars:
 
-- `RANGE_TEST_SERVER_HOST`
-- `RANGE_TEST_SERVER_PORT`
-- `RANGE_TEST_SERVER_PUBLIC_BASE_URL`
-- `RANGE_TEST_SERVER_DATA_DIR`
-- `RANGE_TEST_SERVER_DB_URL`
-- `RANGE_TEST_REPO_CONFIG`
+- `RTMS_SERVER_HOST`
+- `RTMS_SERVER_PORT`
+- `RTMS_SERVER_PUBLIC_BASE_URL`
+- `RTMS_SERVER_DATA_DIR`
+- `RTMS_SERVER_DB_URL`
+- `RTMS_REPO_CONFIG`
 - `GITHUB_TOKEN`
 
-## Run Agent
+## Run Host
 
 ```bash
-export RANGE_TEST_SERVER_URL="http://172.20.10.3:8000"
-range-test-agent run
+export RTMS_SERVER_URL="http://172.20.10.3:8000"
+rtms-host run
 ```
 
-If the agent is running on the same machine as the server for local
+If the host is running on the same machine as the server for local
 development, use:
 
 ```bash
-export RANGE_TEST_SERVER_URL="http://127.0.0.1:8000"
+export RTMS_SERVER_URL="http://127.0.0.1:8000"
 ```
 
 From Windows PowerShell:
 
 ```powershell
-$env:RANGE_TEST_SERVER_URL = "http://172.20.10.3:8000"
-$env:RANGE_TEST_OPENOCD_TARGET_CFG = "target/stm32g4x.cfg"
-range-test-agent run
+$env:RTMS_SERVER_URL = "http://172.20.10.3:8000"
+$env:RTMS_OPENOCD_TARGET_CFG = "target/stm32g4x.cfg"
+rtms-host run
 ```
 
-Verify connectivity from the agent machine before starting the agent:
+Verify connectivity from the host machine before starting the host:
 
 ```bash
 curl http://172.20.10.3:8000/healthz
@@ -311,34 +311,34 @@ curl http://172.20.10.3:8000/healthz
 
 Key env vars:
 
-- `RANGE_TEST_SERVER_URL`
-- `RANGE_TEST_AGENT_NAME`
-- `RANGE_TEST_AGENT_LABEL`
-- `RANGE_TEST_AGENT_BUILD_CAPABLE`
-- `RANGE_TEST_SIMULATE_HARDWARE`
-- `RANGE_TEST_SIMULATE_CAPTURE`
-- `RANGE_TEST_OPENOCD_BIN`
-- `RANGE_TEST_OPENOCD_INTERFACE_CFG`
-- `RANGE_TEST_OPENOCD_TARGET_CFG`
-- `RANGE_TEST_OPENOCD_SCAN_PROBES`
-- `RANGE_TEST_OPENOCD_RTT_SEARCH_ADDRESS`
-- `RANGE_TEST_OPENOCD_RTT_SEARCH_SIZE_BYTES`
-- `RANGE_TEST_OPENOCD_RTT_ID`
-- `RANGE_TEST_OPENOCD_RTT_HUMAN_CHANNEL`
-- `RANGE_TEST_OPENOCD_RTT_MACHINE_CHANNEL`
-- `RANGE_TEST_CAPTURE_COMMAND_TEMPLATE`
+- `RTMS_SERVER_URL`
+- `RTMS_HOST_NAME`
+- `RTMS_HOST_LABEL`
+- `RTMS_HOST_BUILD_CAPABLE`
+- `RTMS_SIMULATE_HARDWARE`
+- `RTMS_SIMULATE_CAPTURE`
+- `RTMS_OPENOCD_BIN`
+- `RTMS_OPENOCD_INTERFACE_CFG`
+- `RTMS_OPENOCD_TARGET_CFG`
+- `RTMS_OPENOCD_SCAN_PROBES`
+- `RTMS_OPENOCD_RTT_SEARCH_ADDRESS`
+- `RTMS_OPENOCD_RTT_SEARCH_SIZE_BYTES`
+- `RTMS_OPENOCD_RTT_ID`
+- `RTMS_OPENOCD_RTT_HUMAN_CHANNEL`
+- `RTMS_OPENOCD_RTT_MACHINE_CHANNEL`
+- `RTMS_CAPTURE_COMMAND_TEMPLATE`
 
 Simulation defaults to OFF:
 
-- `RANGE_TEST_SIMULATE_HARDWARE=0` unless explicitly set to `1`
-- `RANGE_TEST_SIMULATE_CAPTURE=0` unless explicitly set to `1`
+- `RTMS_SIMULATE_HARDWARE=0` unless explicitly set to `1`
+- `RTMS_SIMULATE_CAPTURE=0` unless explicitly set to `1`
 
-By default the agent scans for connected probes, auto-selects one probe when
+By default the host scans for connected probes, auto-selects one probe when
 exactly one is present, and uses the built-in OpenOCD RTT capturer. Use
-`range-test-agent probe-scan` to inspect what the agent sees before running a
+`rtms-host probe-scan` to inspect what the host sees before running a
 session.
 
-`RANGE_TEST_CAPTURE_COMMAND_TEMPLATE` is optional. If you set it, it should
+`RTMS_CAPTURE_COMMAND_TEMPLATE` is optional. If you set it, it should
 format against these placeholders:
 
 - `{role}`
@@ -355,14 +355,14 @@ format against these placeholders:
 For STM32G474-based boards, the correct default OpenOCD target script is:
 
 ```bash
-export RANGE_TEST_OPENOCD_TARGET_CFG="target/stm32g4x.cfg"
+export RTMS_OPENOCD_TARGET_CFG="target/stm32g4x.cfg"
 ```
 
-If OpenOCD is installed on Windows but not on `PATH`, point the agent at the
+If OpenOCD is installed on Windows but not on `PATH`, point the host at the
 binary directly:
 
 ```powershell
-$env:RANGE_TEST_OPENOCD_BIN = "C:\openocd\xpack-openocd-0.12.0-7\bin\openocd.exe"
+$env:RTMS_OPENOCD_BIN = "C:\openocd\xpack-openocd-0.12.0-7\bin\openocd.exe"
 $env:OPENOCD_SCRIPTS = "C:\openocd\xpack-openocd-0.12.0-7\openocd\scripts"
 ```
 
@@ -371,8 +371,8 @@ $env:OPENOCD_SCRIPTS = "C:\openocd\xpack-openocd-0.12.0-7\openocd\scripts"
 To exercise the flow without hardware:
 
 ```bash
-export RANGE_TEST_SIMULATE_HARDWARE=1
-export RANGE_TEST_SIMULATE_CAPTURE=1
+export RTMS_SIMULATE_HARDWARE=1
+export RTMS_SIMULATE_CAPTURE=1
 ```
 
 This keeps the end-to-end job/session/report path usable for development.

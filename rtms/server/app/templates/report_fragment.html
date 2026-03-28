@@ -1,0 +1,46 @@
+{% from "partials/report/_macros.html" import pct, num1, report_limit_note with context %}
+{% set metrics = derived_metrics or {} %}
+{% set overview = metrics.link_overview or {} %}
+{% set bars = metrics.quality_bars or [] %}
+{% set channel = metrics.channel_snapshot or {} %}
+{% set signal = metrics.signal_summary or {} %}
+{% set tx_health = metrics.tx_health or {} %}
+{% set rx_health = metrics.rx_health or {} %}
+{% set tx_timing = metrics.tx_timing_summary or {} %}
+{% set type_breakdown = metrics.packet_type_breakdown or [] %}
+{% set drop_reasons = metrics.drop_reason_breakdown or [] %}
+{% set temporal = metrics.link_time_bins or [] %}
+{% set worst_bins = metrics.worst_link_bins or [] %}
+{% set relationship = metrics.pdr_per_relationship_by_rssi or [] %}
+{% set rolling = metrics.rolling_reliability_by_time or [] %}
+{% set inter_arrival_points = metrics.inter_arrival_points or [] %}
+{% set inter_arrival_hist = metrics.inter_arrival_histogram or [] %}
+{% set rssi_distribution = metrics.rssi_distribution or [] %}
+{% set throughput = metrics.throughput_by_time or [] %}
+{% set channel_events = metrics.channel_events or [] %}
+{% set chart_w = 760 %}
+{% set chart_h = 220 %}
+{% set chart_pad_l = 52 %}
+{% set chart_pad_r = 18 %}
+{% set chart_pad_t = 16 %}
+{% set chart_pad_b = 30 %}
+{% set axis_color = '#94a3b8' %}
+{% set grid_color = '#d0d7de' %}
+{% set label_color = '#4b5563' %}
+{% set c_primary = '#1f6feb' %}
+{% set c_secondary = '#2f9a66' %}
+{% set c_tertiary = '#d17d00' %}
+{% set report_table_limit = 200 %}
+{% set report_json_url = '/api/sessions/' ~ session.id ~ '/report/json' %}
+{% set timeline_json_url = '/api/sessions/' ~ session.id ~ '/timeline' %}
+
+<section class="report">
+  <section class="report-screen">
+    {% include "partials/report/_verdict.html" %}
+    {% include "partials/report/_scorecards.html" %}
+    {% include "partials/report/_radio_snapshot.html" %}
+    {% include "partials/report/_packet_types.html" %}
+    {% include "partials/report/_loss_hotspots.html" %}
+    {% include "partials/report/_evidence.html" %}
+  </section>
+</section>

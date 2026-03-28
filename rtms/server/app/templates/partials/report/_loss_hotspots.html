@@ -1,0 +1,106 @@
+    <section class="panel" id="report-loss-hotspots" data-report-section data-report-title="Loss Hotspots Over Time">
+      <div class="panel-head">
+        <h3>Loss Hotspots Over Time</h3>
+      </div>
+      {% if temporal %}
+      {% set temporal_inner_w = chart_w - chart_pad_l - chart_pad_r %}
+      {% set temporal_inner_h = chart_h - chart_pad_t - chart_pad_b %}
+      {% set temporal_count = temporal | length %}
+      {% set temporal_step = temporal_inner_w / ((temporal_count - 1) if temporal_count > 1 else 1) %}
+      {% set temporal_mid = ((temporal_count - 1) / 2) | round(0, 'floor') | int %}
+      <div class="report-status-row">
+        <span class="report-pill">Blue TX -&gt; RX accepted</span>
+        <span class="report-pill">Green TX -&gt; RX seen</span>
+      </div>
+      <div class="chart-shell">
+        <h4 class="chart-title">Delivery and Visibility Timeline</h4>
+        <svg viewBox="0 0 {{ chart_w }} {{ chart_h }}" class="chart-svg" role="img" aria-label="Delivery and visibility timeline">
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_h - chart_pad_b }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t }}" x2="{{ chart_pad_l }}" y2="{{ chart_h - chart_pad_b }}" stroke="{{ axis_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t + (temporal_inner_h * 0.25) }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_pad_t + (temporal_inner_h * 0.25) }}" stroke="{{ grid_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t + (temporal_inner_h * 0.5) }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_pad_t + (temporal_inner_h * 0.5) }}" stroke="{{ grid_color }}" stroke-width="1" />
+          <line x1="{{ chart_pad_l }}" y1="{{ chart_pad_t + (temporal_inner_h * 0.75) }}" x2="{{ chart_w - chart_pad_r }}" y2="{{ chart_pad_t + (temporal_inner_h * 0.75) }}" stroke="{{ grid_color }}" stroke-width="1" />
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_h - chart_pad_b + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">0.00</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_pad_t + (temporal_inner_h * 0.5) + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">0.50</text>
+          <text x="{{ chart_pad_l - 8 }}" y="{{ chart_pad_t + 4 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">1.00</text>
+          <text x="{{ chart_pad_l }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="start">{{ temporal[0].start_ms }} ms</text>
+          <text x="{{ chart_pad_l + (temporal_mid * temporal_step) }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="middle">{{ temporal[temporal_mid].start_ms }} ms</text>
+          <text x="{{ chart_w - chart_pad_r }}" y="{{ chart_h - 8 }}" font-size="10" fill="{{ label_color }}" text-anchor="end">{{ temporal[-1].end_ms }} ms</text>
+          <polyline points="{% for item in temporal %}{% set x = chart_pad_l + loop.index0 * temporal_step %}{% set y = chart_h - chart_pad_b - (clamp01(item.delivery_ratio) * temporal_inner_h) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_primary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+          <polyline points="{% for item in temporal %}{% set x = chart_pad_l + loop.index0 * temporal_step %}{% set y = chart_h - chart_pad_b - (clamp01(item.visibility_ratio) * temporal_inner_h) %}{{ '%.2f' | format(x) }},{{ '%.2f' | format(y) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="{{ c_secondary }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+      {% endif %}
+
+      <div class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>Worst Time Bin</th>
+              <th>TX Sent</th>
+              <th>RX Seen</th>
+              <th>RX Accepted</th>
+              <th>TX -&gt; Accepted</th>
+              <th>Seen -&gt; Accepted</th>
+              <th>Avg Accepted RSSI</th>
+              <th>Avg Accepted LQI</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in worst_bins %}
+            <tr>
+              <td>[{{ item.start_ms }}, {{ item.end_ms }})</td>
+              <td>{{ item.tx_packets }}</td>
+              <td>{{ item.rx_seen_packets }}</td>
+              <td>{{ item.rx_accepted_packets }}</td>
+              <td>{{ pct(item.delivery_ratio) }}</td>
+              <td>{{ pct(item.acceptance_ratio) }}</td>
+              <td>{% if item.avg_rssi_dbm is not none %}{{ '%.1f dBm' | format(item.avg_rssi_dbm) }}{% else %}-{% endif %}</td>
+              <td>{% if item.avg_lqi is not none %}{{ '%.1f' | format(item.avg_lqi) }}{% else %}-{% endif %}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="muted">No time-bin delivery summary is available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <details class="report-expand" id="report-time-bins" data-report-section data-report-title="Full Time-Bin Table">
+        <summary>Full time-bin table</summary>
+        {{ report_limit_note(temporal, report_table_limit, report_json_url, "report JSON") }}
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>Time Bin ms</th>
+                <th>TX Sent</th>
+                <th>RX Seen</th>
+                <th>RX Accepted</th>
+                <th>TX -&gt; Accepted</th>
+                <th>TX -&gt; Seen</th>
+                <th>Seen -&gt; Accepted</th>
+                <th>Avg Accepted RSSI</th>
+                <th>Avg Accepted LQI</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in temporal[:report_table_limit] %}
+              <tr>
+                <td>[{{ item.start_ms }}, {{ item.end_ms }})</td>
+                <td>{{ item.tx_packets }}</td>
+                <td>{{ item.rx_seen_packets }}</td>
+                <td>{{ item.rx_accepted_packets }}</td>
+                <td>{{ pct(item.delivery_ratio) }}</td>
+                <td>{{ pct(item.visibility_ratio) }}</td>
+                <td>{{ pct(item.acceptance_ratio) }}</td>
+                <td>{% if item.avg_rssi_dbm is not none %}{{ '%.1f' | format(item.avg_rssi_dbm) }}{% else %}-{% endif %}</td>
+                <td>{% if item.avg_lqi is not none %}{{ '%.1f' | format(item.avg_lqi) }}{% else %}-{% endif %}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="9" class="muted">No full time-bin table is available.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </section>

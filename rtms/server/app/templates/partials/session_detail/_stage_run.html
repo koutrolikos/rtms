@@ -1,0 +1,130 @@
+      <section
+        class="pipeline-stage {% if stage.current == 3 %}is-open{% endif %}"
+        id="stage-run"
+        data-pipeline-stage
+        data-stage-status="{% if stage.current == 3 %}active{% elif report_ready or session.status == 'report_ready' %}complete{% else %}pending{% endif %}"
+      >
+        <header class="pipeline-stage-head">
+          <div class="pipeline-stage-heading">
+            <div class="pipeline-stage-title">
+              <span class="pipeline-step-number">3</span>
+              <div>
+                <h3>Run</h3>
+              </div>
+            </div>
+            <div class="pipeline-stage-meta">
+              <span class="pipeline-pill {% if session.status == 'capturing' %}live{% elif run_active %}ready{% else %}pending{% endif %}">
+                {% if session.status == "capturing" %}live{% elif run_active %}active{% else %}pending{% endif %}
+              </span>
+            </div>
+          </div>
+        </header>
+        <div class="pipeline-stage-body">
+          <article class="panel run-control-panel">
+            <div class="run-control-shell">
+              <div class="run-control-status">
+                <div class="run-status-line">
+                  <h3>Control</h3>
+                  <span class="chip chip-{{ session.status }}">{{ session.status | humanize_token }}</span>
+                </div>
+                <p class="muted run-control-summary">
+                  {% if can_start %}
+                  All required hosts and artifacts are assigned. Start capture when the field setup is ready.
+                  {% elif session.status == "capturing" %}
+                  Capture is running. Use annotations to capture environmental changes and stop manually if needed.
+                  {% else %}
+                  Resolve the blockers below before the session can start.
+                  {% endif %}
+                </p>
+                <div class="run-readiness-row">
+                  <span class="run-readiness-item {% if session.tx_host_id %}ready{% else %}pending{% endif %}">TX host</span>
+                  <span class="run-readiness-item {% if session.rx_host_id %}ready{% else %}pending{% endif %}">RX host</span>
+                  <span class="run-readiness-item {% if session.tx_artifact_id %}ready{% else %}pending{% endif %}">TX artifact</span>
+                  <span class="run-readiness-item {% if session.rx_artifact_id %}ready{% else %}pending{% endif %}">RX artifact</span>
+                </div>
+                {% if start_blockers %}
+                <div class="run-action-hint">
+                  {% for blocker in start_blockers %}
+                  <span>{{ blocker }}</span>
+                  {% endfor %}
+                </div>
+                {% endif %}
+              </div>
+              <div class="run-control-actions">
+                <form method="post" action="/sessions/{{ session.id }}/start">
+                  <button type="submit" class="run-primary-action" {% if not can_start %}disabled title="{{ start_blockers | join(' ') }}"{% endif %}>Start Session</button>
+                </form>
+                {% if session.status == "capturing" %}
+                <form method="post" action="/sessions/{{ session.id }}/stop">
+                  <button type="submit" class="danger">Manual Stop</button>
+                </form>
+                {% endif %}
+                <form method="post" action="/sessions/{{ session.id }}/report/generate">
+                  <button type="submit" class="secondary">Generate Report</button>
+                </form>
+              </div>
+            </div>
+          </article>
+          <div class="run-stage-grid">
+            <article class="panel run-role-panel">
+              <div class="panel-head">
+                <h3>Role Runs</h3>
+              </div>
+              <div class="run-role-grid">
+                {% for role_name in ["TX", "RX"] %}
+                {% set role_run = namespace(item=None) %}
+                {% for role in roles %}
+                {% if role.role == role_name %}
+                {% set role_run.item = role %}
+                {% endif %}
+                {% endfor %}
+                {% set assigned_host_id = session.tx_host_id if role_name == "TX" else session.rx_host_id %}
+                <article class="run-role-card">
+                  <div class="run-role-head">
+                    <h4>{{ role_name }}</h4>
+                    <span class="chip {% if role_run.item %}chip-{{ role_run.item.status }}{% endif %}">
+                      {{ role_run.item.status | humanize_token if role_run.item else "not started" }}
+                    </span>
+                  </div>
+                  <dl class="run-role-meta">
+                    <div>
+                      <dt>Host</dt>
+                      <dd>{{ host_labels.get(role_run.item.host_id, role_run.item.host_id) if role_run.item and role_run.item.host_id else host_labels.get(assigned_host_id, "Unassigned") if assigned_host_id else "Unassigned" }}</dd>
+                    </div>
+                    <div>
+                      <dt>Flash</dt>
+                      <dd>{{ role_run.item.flash_result or "-" if role_run.item else "-" }}</dd>
+                    </div>
+                    <div>
+                      <dt>Verify</dt>
+                      <dd>{{ role_run.item.verify_result or "-" if role_run.item else "-" }}</dd>
+                    </div>
+                    <div>
+                      <dt>Failure</dt>
+                      <dd>{{ role_run.item.failure_reason or "-" if role_run.item else "-" }}</dd>
+                    </div>
+                  </dl>
+                </article>
+                {% endfor %}
+              </div>
+            </article>
+
+            <article class="panel run-annotation-panel">
+              <div class="panel-head">
+                <h3>Live Annotation</h3>
+              </div>
+              <form method="post" action="/sessions/{{ session.id }}/annotations" class="stack run-annotation-form">
+                <label><span>Annotation</span><textarea name="text" rows="2" placeholder="Vehicle passed tree line, LOS obstruction, antenna orientation change."></textarea></label>
+                <button type="submit">Add Annotation</button>
+              </form>
+              <ul class="timeline run-annotation-stream">
+                {% for annotation in annotations %}
+                <li><strong>{{ annotation.created_at }}</strong><span>{{ annotation.text }}</span></li>
+                {% else %}
+                <li class="muted run-empty">No annotations yet.</li>
+                {% endfor %}
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
