@@ -3,6 +3,8 @@ set -euo pipefail
 
 CALLER_PWD="$(pwd -P)"
 SERVER_URL=""
+SERVER_USERNAME=""
+SERVER_PASSWORD=""
 MODE="full"
 INSTALL_BUILD_TOOLS="auto"
 REPO_URL="https://github.com/koutrolikos/rtms.git"
@@ -22,6 +24,8 @@ Required:
 Options:
   --mode MODE                 full | build-only | flash-capture (default: full)
   --install-build-tools BOOL  true | false | auto (default: auto, controls build-tool dependency checks)
+  --server-username USER      RTMS Basic auth username to store in the env file
+  --server-password PASS      RTMS Basic auth password to store in the env file
   --repo-url URL              RTMS git URL (default: https://github.com/koutrolikos/rtms.git)
   --install-dir PATH          Install path (default: ~/rtms-host)
   --openocd-target-cfg CFG    OpenOCD target cfg (default: target/stm32g4x.cfg)
@@ -84,6 +88,42 @@ normalize_server_url() {
     die "--server-url cannot use 0.0.0.0; use 127.0.0.1 for same-machine development or a routable host/IP for remote hosts"
   fi
   printf '%s\n' "$trimmed"
+}
+
+is_interactive() {
+  [[ -t 0 && -t 1 ]]
+}
+
+prompt_server_auth() {
+  if [[ -n "$SERVER_USERNAME" && -n "$SERVER_PASSWORD" ]]; then
+    return
+  fi
+  if [[ -n "$SERVER_USERNAME" && -z "$SERVER_PASSWORD" ]]; then
+    if ! is_interactive; then
+      die "--server-password is required when --server-username is set"
+    fi
+    printf 'RTMS Basic auth password for %s: ' "$SERVER_USERNAME"
+    read -r -s SERVER_PASSWORD
+    printf '\n'
+    [[ -n "$SERVER_PASSWORD" ]] || die "server password cannot be empty when username is set"
+    return
+  fi
+  if [[ -z "$SERVER_USERNAME" && -n "$SERVER_PASSWORD" ]]; then
+    die "--server-username is required when --server-password is set"
+  fi
+  if ! is_interactive; then
+    return
+  fi
+  printf 'RTMS Basic auth username (leave blank to skip): '
+  read -r SERVER_USERNAME
+  if [[ -z "$SERVER_USERNAME" ]]; then
+    SERVER_PASSWORD=""
+    return
+  fi
+  printf 'RTMS Basic auth password for %s: ' "$SERVER_USERNAME"
+  read -r -s SERVER_PASSWORD
+  printf '\n'
+  [[ -n "$SERVER_PASSWORD" ]] || die "server password cannot be empty when username is set"
 }
 
 ensure_install_target_ready() {
@@ -162,6 +202,24 @@ while [[ $# -gt 0 ]]; do
       INSTALL_BUILD_TOOLS="$2"
       shift 2
       ;;
+    --server-username=*)
+      SERVER_USERNAME="${1#*=}"
+      shift
+      ;;
+    --server-username)
+      require_value "$1" "${2-}"
+      SERVER_USERNAME="$2"
+      shift 2
+      ;;
+    --server-password=*)
+      SERVER_PASSWORD="${1#*=}"
+      shift
+      ;;
+    --server-password)
+      require_value "$1" "${2-}"
+      SERVER_PASSWORD="$2"
+      shift 2
+      ;;
     --repo-url=*)
       REPO_URL="${1#*=}"
       shift
@@ -209,6 +267,7 @@ fi
 
 SERVER_URL="$(normalize_server_url "$SERVER_URL")"
 INSTALL_DIR="$(normalize_path "$INSTALL_DIR")"
+prompt_server_auth
 
 if [[ "$MODE" != "full" && "$MODE" != "build-only" && "$MODE" != "flash-capture" ]]; then
   echo "error: --mode must be one of: full, build-only, flash-capture" >&2
@@ -339,6 +398,11 @@ export RTMS_OPENOCD_RTT_MACHINE_CHANNEL=1
 export RTMS_OPENOCD_RTT_POLLING_INTERVAL_MS=10
 export RTMS_OPENOCD_RTT_STARTUP_TIMEOUT_SECONDS=15
 ENVVARS
+if [[ -n "$SERVER_USERNAME" ]]; then
+  printf 'export RTMS_SERVER_USERNAME=%q\n' "$SERVER_USERNAME" >> "$ENV_FILE"
+  printf 'export RTMS_SERVER_PASSWORD=%q\n' "$SERVER_PASSWORD" >> "$ENV_FILE"
+fi
+chmod 600 "$ENV_FILE"
 
 echo "[4/4] Basic connectivity check"
 if command -v curl >/dev/null 2>&1; then

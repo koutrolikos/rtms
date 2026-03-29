@@ -1,14 +1,13 @@
 # RTMS
 
-## Fresh Install (Step By Step)
+## Fresh Install for Host
 
-Use these commands exactly, in order.
 
 ### 1) Pick your server URL
 
 Example used below:
 
-- `http://172.20.10.3:8000`
+- `https://rtms.asat.gr`
 
 ### 2) Clone RTMS
 
@@ -19,30 +18,29 @@ cd rtms
 
 ### 3) Run the bootstrap script for your OS
 
-What bootstrap does now:
+What bootstrap does:
 
 - checks required dependencies
 - installs missing dependencies
 - clones/updates RTMS into `~/rtms-host`
-- writes runtime env file (`.rtms-env.sh` or `.rtms-env.ps1`)
-- does not create a virtual environment
+- prompts for optional RTMS Basic auth credentials and writes them into the runtime env file (`.rtms-env.sh` or `.rtms-env.ps1`)
 
 macOS:
 
 ```bash
-./scripts/bootstrap_host_macos.sh --server-url http://172.20.10.3:8000
+./scripts/bootstrap_host_macos.sh --server-url https://rtms.asat.gr
 ```
 
 Linux:
 
 ```bash
-./scripts/bootstrap_host_linux.sh --server-url http://172.20.10.3:8000
+./scripts/bootstrap_host_linux.sh --server-url https://rtms.asat.gr
 ```
 
 Windows PowerShell:
 
 ```powershell
-.\scripts\bootstrap_host_windows.ps1 -ServerUrl http://172.20.10.3:8000
+.\scripts\bootstrap_host_windows.ps1 -ServerUrl https://rtms.asat.gr
 ```
 
 ### 4) Create venv and install RTMS package
@@ -110,7 +108,7 @@ Windows PowerShell:
 .\.venv\Scripts\rtms-server.exe run
 ```
 
-Distributed RF range-test orchestration MVP with:
+Distributed RF range-test orchestration with:
 
 - a FastAPI control plane
 - polling Python hosts
@@ -124,7 +122,7 @@ Distributed RF range-test orchestration MVP with:
 From the host machine:
 
 ```bash
-curl http://172.20.10.3:8000/healthz
+curl https://rtms.asat.gr/healthz
 ```
 
 You should get a healthy response before starting the host.
@@ -133,13 +131,6 @@ You should get a healthy response before starting the host.
 
 RTMS now supports optional HTTP Basic auth for both the web UI and the host API.
 
-Enable it on the server:
-
-```bash
-export RTMS_AUTH_USERNAME="rtms"
-export RTMS_AUTH_PASSWORD="change-me"
-```
-
 When auth is enabled, configure every host with matching credentials:
 
 ```bash
@@ -147,12 +138,15 @@ export RTMS_SERVER_USERNAME="rtms"
 export RTMS_SERVER_PASSWORD="change-me"
 ```
 
+The bootstrap scripts prompt for these values during install and write them to
+the generated env file. Leave the username blank to skip host auth setup.
+
 Notes:
 
 - `/healthz` remains open for simple liveness checks.
 - All other operator and host endpoints require Basic auth.
 - Browser access will prompt for credentials automatically.
-- CLI checks can use `curl -u rtms:change-me http://172.20.10.3:8000/sessions`.
+- CLI checks can use `curl -u rtms:change-me https://rtms.asat.gr/sessions`.
 
 ## Dependency Matrix (What Is Actually Required)
 
@@ -215,7 +209,7 @@ The server listens on all interfaces by default and advertises a LAN-facing URL.
 If you need to force the public address used by hosts, set:
 
 ```bash
-export RTMS_SERVER_PUBLIC_BASE_URL="http://172.20.10.3:8000"
+export RTMS_SERVER_PUBLIC_BASE_URL="https://rtms.asat.gr"
 ```
 
 By default, the bootstrap-generated env file pins:
@@ -229,7 +223,7 @@ not want runtime data created relative to the directory where you launch the com
 1. Start an host:
 
 ```bash
-export RTMS_SERVER_URL="http://172.20.10.3:8000"
+export RTMS_SERVER_URL="https://rtms.asat.gr"
 rtms-host run
 ```
 
@@ -250,7 +244,7 @@ export RTMS_SERVER_PASSWORD="change-me"
 On Windows PowerShell:
 
 ```powershell
-$env:RTMS_SERVER_URL = "http://172.20.10.3:8000"
+$env:RTMS_SERVER_URL = "https://rtms.asat.gr"
 $env:RTMS_OPENOCD_TARGET_CFG = "target/stm32g4x.cfg"
 rtms-host run
 ```
@@ -264,19 +258,19 @@ $env:RTMS_OPENOCD_BIN = "C:\openocd\xpack-openocd-0.12.0-7\bin\openocd.exe"
 $env:OPENOCD_SCRIPTS = "C:\openocd\xpack-openocd-0.12.0-7\openocd\scripts"
 ```
 
-4. Open `http://<server-lan-ip>:8000` from any device on the same network.
+4. Open `https://rtms.asat.gr` from any device with access to the deployed server.
 
 5. From another device, verify the server is reachable:
 
 ```bash
-curl http://<server-lan-ip>:8000/healthz
+curl https://rtms.asat.gr/healthz
 ```
 
 If the Windows host shows `WinError 10061`, it usually means one of these:
 
 - `RTMS_SERVER_URL` still points to `127.0.0.1`, `localhost`, or `0.0.0.0`
-- the server machine firewall is blocking inbound TCP `8000`
-- the host is using the wrong LAN IP for the server machine
+- the reverse proxy is not forwarding traffic to the RTMS server
+- the host is using the wrong RTMS URL
 
 That first point only applies to a remote host. For same-machine development,
 `http://127.0.0.1:8000` is valid.
@@ -295,11 +289,14 @@ with generated role/build-config JSON from the session form, patches
 log, then deletes its local checkout and build files for that artifact.
 
 If the host shows `SSL: WRONG_VERSION_NUMBER`, it is almost certainly using
-`https://<server-ip>:8000` against this plain HTTP server. Use `http://`, for example:
+`https://<server-ip>:8000` against the built-in plain HTTP RTMS server instead of
+the HTTPS reverse-proxy URL. For deployed access behind nginx, use:
 
 ```powershell
-$env:RTMS_SERVER_URL = "http://172.20.10.3:8000"
+$env:RTMS_SERVER_URL = "https://rtms.asat.gr"
 ```
+
+For same-machine development against the built-in server, use `http://127.0.0.1:8000`.
 
 ## Prebuilt Artifact Upload
 
@@ -329,5 +326,14 @@ rtms-host upload-prebuilt \
 
 The command prints the created `artifact_id`. After upload, assign the ready TX
 and RX artifacts from the session page.
+
+## Tests
+
+```bash
+pip install -e '.[dev]'
+pytest
+```
+
+GitHub Actions runs this same test suite automatically on every push and pull request.
 
 See [architecture.md](/Users/odysseaskoutrolikos/rtms/architecture.md), [host.md](/Users/odysseaskoutrolikos/rtms/host.md), [mvp_scope.md](/Users/odysseaskoutrolikos/rtms/mvp_scope.md), [docs/developer_setup.md](/Users/odysseaskoutrolikos/rtms/docs/developer_setup.md), and [docs/operator_guide.md](/Users/odysseaskoutrolikos/rtms/docs/operator_guide.md).

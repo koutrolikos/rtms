@@ -8,6 +8,10 @@ param(
     [ValidateSet('true', 'false', 'auto')]
     [string]$InstallBuildTools = 'auto',
 
+    [string]$ServerUsername = '',
+
+    [string]$ServerPassword = '',
+
     [string]$RepoUrl = 'https://github.com/koutrolikos/rtms.git',
 
     [string]$InstallDir = "$HOME\rtms-host",
@@ -60,6 +64,59 @@ function Install-MissingDependencies {
     }
 }
 
+function ConvertTo-PlainText {
+    param(
+        [Parameter(Mandatory = $true)]
+        [Security.SecureString]$SecureValue
+    )
+
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureValue)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+}
+
+function Escape-PowerShellSingleQuoted {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    return $Value.Replace("'", "''")
+}
+
+function Resolve-ServerAuth {
+    if ($ServerUsername -and $ServerPassword) {
+        return
+    }
+    if ($ServerUsername -and -not $ServerPassword) {
+        $securePassword = Read-Host "RTMS Basic auth password for $ServerUsername" -AsSecureString
+        $script:ServerPassword = ConvertTo-PlainText -SecureValue $securePassword
+        if (-not $script:ServerPassword) {
+            throw 'Server password cannot be empty when username is set'
+        }
+        return
+    }
+    if (-not $ServerUsername -and $ServerPassword) {
+        throw 'ServerUsername is required when ServerPassword is set'
+    }
+
+    $script:ServerUsername = Read-Host 'RTMS Basic auth username (leave blank to skip)'
+    if (-not $script:ServerUsername) {
+        $script:ServerPassword = ''
+        return
+    }
+
+    $securePassword = Read-Host "RTMS Basic auth password for $script:ServerUsername" -AsSecureString
+    $script:ServerPassword = ConvertTo-PlainText -SecureValue $securePassword
+    if (-not $script:ServerPassword) {
+        throw 'Server password cannot be empty when username is set'
+    }
+}
+
 if ($InstallBuildTools -eq 'auto') {
     if ($Mode -eq 'full' -or $Mode -eq 'build-only') {
         $InstallBuildTools = 'true'
@@ -86,6 +143,8 @@ switch ($Mode) {
         $CaptureCapable = 1
     }
 }
+
+Resolve-ServerAuth
 
 Write-Host '[1/4] Checking required tools'
 $missing = @()
@@ -138,12 +197,17 @@ else {
 
 Write-Host '[3/4] Writing host env file'
 $envFile = "$InstallDir\.rtms-env.ps1"
+$escapedInstallDir = Escape-PowerShellSingleQuoted -Value $InstallDir
+$escapedServerUrl = Escape-PowerShellSingleQuoted -Value $ServerUrl
+$escapedOpenOcdTargetCfg = Escape-PowerShellSingleQuoted -Value $OpenOcdTargetCfg
+$escapedHostDataDir = Escape-PowerShellSingleQuoted -Value "$InstallDir\host_data"
+$escapedServerDataDir = Escape-PowerShellSingleQuoted -Value "$InstallDir\server_data"
 @"
-`$env:RTMS_INSTALL_DIR = '$InstallDir'
-`$env:RTMS_SERVER_URL = '$ServerUrl'
-`$env:RTMS_HOST_DATA_DIR = '$InstallDir\host_data'
-`$env:RTMS_SERVER_DATA_DIR = '$InstallDir\server_data'
-`$env:RTMS_OPENOCD_TARGET_CFG = '$OpenOcdTargetCfg'
+`$env:RTMS_INSTALL_DIR = '$escapedInstallDir'
+`$env:RTMS_SERVER_URL = '$escapedServerUrl'
+`$env:RTMS_HOST_DATA_DIR = '$escapedHostDataDir'
+`$env:RTMS_SERVER_DATA_DIR = '$escapedServerDataDir'
+`$env:RTMS_OPENOCD_TARGET_CFG = '$escapedOpenOcdTargetCfg'
 `$env:RTMS_HOST_BUILD_CAPABLE = '$BuildCapable'
 `$env:RTMS_HOST_FLASH_CAPABLE = '$FlashCapable'
 `$env:RTMS_HOST_CAPTURE_CAPABLE = '$CaptureCapable'
@@ -159,6 +223,12 @@ $envFile = "$InstallDir\.rtms-env.ps1"
 `$env:RTMS_OPENOCD_RTT_POLLING_INTERVAL_MS = '10'
 `$env:RTMS_OPENOCD_RTT_STARTUP_TIMEOUT_SECONDS = '15'
 "@ | Set-Content -Path $envFile -Encoding UTF8
+if ($ServerUsername) {
+    $escapedServerUsername = Escape-PowerShellSingleQuoted -Value $ServerUsername
+    $escapedServerPassword = Escape-PowerShellSingleQuoted -Value $ServerPassword
+    Add-Content -Path $envFile -Value "`$env:RTMS_SERVER_USERNAME = '$escapedServerUsername'"
+    Add-Content -Path $envFile -Value "`$env:RTMS_SERVER_PASSWORD = '$escapedServerPassword'"
+}
 
 Write-Host '[4/4] Basic connectivity check'
 try {
