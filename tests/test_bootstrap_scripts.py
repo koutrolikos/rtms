@@ -103,6 +103,18 @@ printf '%s\\n' "$*" >> "$RTMS_TEST_LOG_DIR/curl.log"
 
 def _install_fake_macos_commands(bin_dir: Path, log_dir: Path) -> None:
     _write_executable(
+        bin_dir / "uname",
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "-s" ]]; then
+  printf '%s\\n' "Darwin"
+  exit 0
+fi
+echo "unexpected uname invocation: $*" >&2
+exit 1
+""",
+    )
+    _write_executable(
         bin_dir / "xcode-select",
         """#!/usr/bin/env bash
 set -euo pipefail
