@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from rtms.shared.enums import (
     HostStatus,
@@ -59,6 +59,11 @@ class HighAltitudeCCExclusionMask(BaseModel):
     half_bw_hz: int = Field(ge=0)
 
 
+class IntegerRange(BaseModel):
+    min: int | None = None
+    max: int | None = None
+
+
 class HighAltitudeCCChannelSelectionConfig(BaseModel):
     allowlist_hz: list[int] = Field(min_length=1, max_length=2)
     band_min_hz: int
@@ -72,6 +77,50 @@ class HighAltitudeCCChannelSelectionConfig(BaseModel):
 class HighAltitudeCCBuildConfig(BaseModel):
     machine_log_detail: int = Field(ge=0, le=1)
     machine_log_stat_period_ms: int = Field(ge=0)
+    rf_bitrate_bps: int = Field(ge=1000)
+    rf_rx_bw_hz: int = Field(ge=58029, le=812407)
+    rf_deviation_hz: int = Field(ge=1587, le=380816)
+    rf_preamble_bytes: int
+    rf_sync_word: int = Field(ge=0, le=0xFFFF)
+    rf_pa_table: list[int] = Field(min_length=8, max_length=8)
+    allowlist_hz: list[int] = Field(min_length=1, max_length=2)
+    band_min_hz: int
+    band_max_hz: int
+    guard_band_hz: int = Field(ge=0, le=500000)
+    exclusion_masks: list[HighAltitudeCCExclusionMask] = Field(default_factory=list, max_length=4)
+    backup_failover_holdoff_ms: int = Field(ge=0, le=600000)
+    rx_thresh_enable: int = Field(ge=0, le=1)
+    rx_min_rssi_dbm: int = Field(ge=-128, le=127)
+    rx_min_lqi: int = Field(ge=0, le=127)
+    rx_thresh_log_every: int = Field(ge=1)
+    rx_poll_interval_ms: int = Field(ge=0, le=1000)
+    tx_complete_timeout_ms: int = Field(ge=1, le=5000)
+    rx_host_bridge_budget: int = Field(ge=1, le=256)
+    telem_gps_period_ms: int = Field(ge=1, le=60000)
+    telem_imu_baro_period_ms: int = Field(ge=1, le=60000)
+    airtime_limit_us_per_hour: int = Field(ge=0, le=360000000)
+
+    @field_validator("rf_preamble_bytes")
+    @classmethod
+    def validate_rf_preamble_bytes(cls, value: int) -> int:
+        if value not in {2, 3, 4, 6, 8, 12, 16, 24}:
+            raise ValueError("rf_preamble_bytes must be one of {2, 3, 4, 6, 8, 12, 16, 24}")
+        return value
+
+    @field_validator("rf_pa_table")
+    @classmethod
+    def validate_rf_pa_table(cls, value: list[int]) -> list[int]:
+        if len(value) != 8:
+            raise ValueError("rf_pa_table must contain exactly 8 values")
+        if any(item < 0 or item > 0xFF for item in value):
+            raise ValueError("rf_pa_table values must be within [0, 255]")
+        return value
+
+    @model_validator(mode="after")
+    def validate_band_bounds(self) -> "HighAltitudeCCBuildConfig":
+        if self.band_min_hz >= self.band_max_hz:
+            raise ValueError("band_min_hz must be less than band_max_hz")
+        return self
 
 
 class IntegerChoice(BaseModel):
@@ -86,7 +135,48 @@ class HighAltitudeCCBuildConfigConstraints(BaseModel):
             IntegerChoice(value=1, label="Packet"),
         ]
     )
-    machine_log_stat_period_ms_min: int = 0
+    machine_log_stat_period_ms: IntegerRange = Field(default_factory=lambda: IntegerRange(min=0))
+    rf_bitrate_bps: IntegerRange = Field(default_factory=lambda: IntegerRange(min=1000))
+    rf_rx_bw_hz: IntegerRange = Field(default_factory=lambda: IntegerRange(min=58029, max=812407))
+    rf_deviation_hz: IntegerRange = Field(default_factory=lambda: IntegerRange(min=1587, max=380816))
+    rf_preamble_bytes_options: list[IntegerChoice] = Field(
+        default_factory=lambda: [
+            IntegerChoice(value=2, label="2 bytes"),
+            IntegerChoice(value=3, label="3 bytes"),
+            IntegerChoice(value=4, label="4 bytes"),
+            IntegerChoice(value=6, label="6 bytes"),
+            IntegerChoice(value=8, label="8 bytes"),
+            IntegerChoice(value=12, label="12 bytes"),
+            IntegerChoice(value=16, label="16 bytes"),
+            IntegerChoice(value=24, label="24 bytes"),
+        ]
+    )
+    rf_sync_word: IntegerRange = Field(default_factory=lambda: IntegerRange(min=0, max=0xFFFF))
+    rf_pa_table_length: IntegerRange = Field(default_factory=lambda: IntegerRange(min=8, max=8))
+    rf_pa_table_value: IntegerRange = Field(default_factory=lambda: IntegerRange(min=0, max=0xFF))
+    allowlist_hz_length: IntegerRange = Field(default_factory=lambda: IntegerRange(min=1, max=2))
+    band_min_hz: IntegerRange = Field(default_factory=IntegerRange)
+    band_max_hz: IntegerRange = Field(default_factory=IntegerRange)
+    guard_band_hz: IntegerRange = Field(default_factory=lambda: IntegerRange(min=0, max=500000))
+    exclusion_masks_length: IntegerRange = Field(default_factory=lambda: IntegerRange(min=0, max=4))
+    exclusion_mask_center_hz: IntegerRange = Field(default_factory=lambda: IntegerRange(min=0))
+    exclusion_mask_half_bw_hz: IntegerRange = Field(default_factory=lambda: IntegerRange(min=0))
+    backup_failover_holdoff_ms: IntegerRange = Field(default_factory=lambda: IntegerRange(min=0, max=600000))
+    rx_thresh_enable_options: list[IntegerChoice] = Field(
+        default_factory=lambda: [
+            IntegerChoice(value=0, label="Disabled"),
+            IntegerChoice(value=1, label="Enabled"),
+        ]
+    )
+    rx_min_rssi_dbm: IntegerRange = Field(default_factory=lambda: IntegerRange(min=-128, max=127))
+    rx_min_lqi: IntegerRange = Field(default_factory=lambda: IntegerRange(min=0, max=127))
+    rx_thresh_log_every: IntegerRange = Field(default_factory=lambda: IntegerRange(min=1))
+    rx_poll_interval_ms: IntegerRange = Field(default_factory=lambda: IntegerRange(min=0, max=1000))
+    tx_complete_timeout_ms: IntegerRange = Field(default_factory=lambda: IntegerRange(min=1, max=5000))
+    rx_host_bridge_budget: IntegerRange = Field(default_factory=lambda: IntegerRange(min=1, max=256))
+    telem_gps_period_ms: IntegerRange = Field(default_factory=lambda: IntegerRange(min=1, max=60000))
+    telem_imu_baro_period_ms: IntegerRange = Field(default_factory=lambda: IntegerRange(min=1, max=60000))
+    airtime_limit_us_per_hour: IntegerRange = Field(default_factory=lambda: IntegerRange(min=0, max=360000000))
 
 
 class RepoBuildConfigResponse(BaseModel):

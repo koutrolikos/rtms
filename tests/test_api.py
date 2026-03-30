@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import zipfile
 
 import httpx
@@ -58,7 +59,131 @@ APP_CONFIG_SAMPLE = """
 #define APP_MACHINE_LOG_STAT_PERIOD_MS (5000U)
 #endif
 #endif
+#ifndef APP_RX_THRESH_ENABLE
+#define APP_RX_THRESH_ENABLE (1)
+#endif
+#ifndef APP_RX_MIN_RSSI_DBM
+#define APP_RX_MIN_RSSI_DBM (-95)
+#endif
+#ifndef APP_RX_MIN_LQI
+#define APP_RX_MIN_LQI (40U)
+#endif
+#ifndef APP_RX_THRESH_LOG_EVERY
+#define APP_RX_THRESH_LOG_EVERY (1000U)
+#endif
+#ifndef APP_RX_POLL_INTERVAL_MS
+#define APP_RX_POLL_INTERVAL_MS (2U)
+#endif
+#ifndef APP_TX_COMPLETE_TIMEOUT_MS
+#define APP_TX_COMPLETE_TIMEOUT_MS (20U)
+#endif
+#ifndef APP_RX_HOST_BRIDGE_BUDGET
+#define APP_RX_HOST_BRIDGE_BUDGET (32U)
+#endif
+#ifndef APP_TELEM_GPS_PERIOD_MS
+#define APP_TELEM_GPS_PERIOD_MS (200U)
+#endif
+#ifndef APP_TELEM_IMU_BARO_PERIOD_MS
+#define APP_TELEM_IMU_BARO_PERIOD_MS (50U)
+#endif
+#ifndef APP_RF_BITRATE_BPS
+#define APP_RF_BITRATE_BPS (76760UL)
+#endif
+#ifndef APP_RF_RX_BW_HZ
+#define APP_RF_RX_BW_HZ (203102UL)
+#endif
+#ifndef APP_RF_DEVIATION_HZ
+#define APP_RF_DEVIATION_HZ (31735UL)
+#endif
+#ifndef APP_RF_PREAMBLE_BYTES
+#define APP_RF_PREAMBLE_BYTES (4U)
+#endif
+#ifndef APP_RF_SYNC_WORD
+#define APP_RF_SYNC_WORD (0xD391UL)
+#endif
+#ifndef APP_RF_PA_TABLE_LIST
+#define APP_RF_PA_TABLE_LIST 0xC2U,0xC2U,0xC2U,0xC2U,0xC2U,0xC2U,0xC2U,0xC2U
+#endif
+#ifndef APP_AIRTIME_LIMIT_US_PER_HOUR
+#define APP_AIRTIME_LIMIT_US_PER_HOUR (306000000UL)
+#endif
+#ifndef APP_CHSEL_ALLOWLIST_COUNT
+#define APP_CHSEL_ALLOWLIST_COUNT (2U)
+#endif
+#ifndef APP_CHSEL_ALLOWLIST_HZ_LIST
+#define APP_CHSEL_ALLOWLIST_HZ_LIST 433200000UL,434600000UL
+#endif
+#ifndef APP_CHSEL_BAND_MIN_HZ
+#define APP_CHSEL_BAND_MIN_HZ (433050000UL)
+#endif
+#ifndef APP_CHSEL_BAND_MAX_HZ
+#define APP_CHSEL_BAND_MAX_HZ (434790000UL)
+#endif
+#ifndef APP_CHSEL_GUARD_BAND_HZ
+#define APP_CHSEL_GUARD_BAND_HZ (30000UL)
+#endif
+#ifndef APP_CHSEL_EXCLUSION_MASK_COUNT
+#define APP_CHSEL_EXCLUSION_MASK_COUNT (1U)
+#endif
+#ifndef APP_CHSEL_EXCLUSION_MASK0_CENTER_HZ
+#define APP_CHSEL_EXCLUSION_MASK0_CENTER_HZ (433500000UL)
+#endif
+#ifndef APP_CHSEL_EXCLUSION_MASK0_HALF_BW_HZ
+#define APP_CHSEL_EXCLUSION_MASK0_HALF_BW_HZ (25000UL)
+#endif
+#ifndef APP_CHSEL_EXCLUSION_MASK1_CENTER_HZ
+#define APP_CHSEL_EXCLUSION_MASK1_CENTER_HZ (0UL)
+#endif
+#ifndef APP_CHSEL_EXCLUSION_MASK1_HALF_BW_HZ
+#define APP_CHSEL_EXCLUSION_MASK1_HALF_BW_HZ (0UL)
+#endif
+#ifndef APP_CHSEL_EXCLUSION_MASK2_CENTER_HZ
+#define APP_CHSEL_EXCLUSION_MASK2_CENTER_HZ (0UL)
+#endif
+#ifndef APP_CHSEL_EXCLUSION_MASK2_HALF_BW_HZ
+#define APP_CHSEL_EXCLUSION_MASK2_HALF_BW_HZ (0UL)
+#endif
+#ifndef APP_CHSEL_EXCLUSION_MASK3_CENTER_HZ
+#define APP_CHSEL_EXCLUSION_MASK3_CENTER_HZ (0UL)
+#endif
+#ifndef APP_CHSEL_EXCLUSION_MASK3_HALF_BW_HZ
+#define APP_CHSEL_EXCLUSION_MASK3_HALF_BW_HZ (0UL)
+#endif
+#ifndef APP_CHSEL_BACKUP_FAILOVER_HOLDOFF_MS
+#define APP_CHSEL_BACKUP_FAILOVER_HOLDOFF_MS (15000U)
+#endif
 """.strip()
+
+
+def _high_altitude_cc_build_config_payload(
+    *, machine_log_detail: int = 1, machine_log_stat_period_ms: int = 5000
+) -> dict:
+    return {
+        "machine_log_detail": machine_log_detail,
+        "machine_log_stat_period_ms": machine_log_stat_period_ms,
+        "rf_bitrate_bps": 76760,
+        "rf_rx_bw_hz": 203102,
+        "rf_deviation_hz": 31735,
+        "rf_preamble_bytes": 4,
+        "rf_sync_word": 0xD391,
+        "rf_pa_table": [0xC2] * 8,
+        "allowlist_hz": [433200000, 434600000],
+        "band_min_hz": 433050000,
+        "band_max_hz": 434790000,
+        "guard_band_hz": 30000,
+        "exclusion_masks": [{"center_hz": 433500000, "half_bw_hz": 25000}],
+        "backup_failover_holdoff_ms": 15000,
+        "rx_thresh_enable": 1,
+        "rx_min_rssi_dbm": -95,
+        "rx_min_lqi": 40,
+        "rx_thresh_log_every": 1000,
+        "rx_poll_interval_ms": 2,
+        "tx_complete_timeout_ms": 20,
+        "rx_host_bridge_budget": 32,
+        "telem_gps_period_ms": 200,
+        "telem_imu_baro_period_ms": 50,
+        "airtime_limit_us_per_hour": 306000000,
+    }
 
 
 def _high_altitude_cc_repo() -> ConfiguredRepo:
@@ -539,6 +664,10 @@ def test_repo_build_config_endpoint_parses_high_altitude_cc_defaults(db_session,
     assert payload["git_sha"] == "deadbeef"
     assert payload["build_config"]["machine_log_detail"] == 1
     assert payload["build_config"]["machine_log_stat_period_ms"] == 5000
+    assert payload["build_config"]["rf_sync_word"] == 0xD391
+    assert payload["build_config"]["allowlist_hz"] == [433200000, 434600000]
+    assert payload["constraints"]["rf_preamble_bytes_options"][0]["value"] == 2
+    assert payload["constraints"]["allowlist_hz_length"]["max"] == 2
     assert payload["constraints"]["machine_log_detail_options"][0]["label"] == "Summary"
 
 
@@ -576,10 +705,7 @@ def test_request_build_json_stores_high_altitude_cc_build_config_and_payload(
             "repo_id": "high-altitude-cc",
             "git_sha": "deadbeefcafebabe",
             "build_host_id": build_host.id,
-            "build_config": {
-                "machine_log_detail": 1,
-                "machine_log_stat_period_ms": 5000,
-            },
+            "build_config": _high_altitude_cc_build_config_payload(machine_log_detail=0),
         },
     )
 
@@ -591,8 +717,10 @@ def test_request_build_json_stores_high_altitude_cc_build_config_and_payload(
     assert job is not None
     assert artifact.metadata_payload["auto_assign_role"] == "TX"
     assert artifact.metadata_payload["requested_build_config"]["machine_log_detail"] == 1
+    assert artifact.metadata_payload["requested_build_config"]["rf_sync_word"] == 0xD391
     assert job.role == "TX"
     assert job.payload["build_config"]["machine_log_stat_period_ms"] == 5000
+    assert job.payload["build_config"]["allowlist_hz"] == [433200000, 434600000]
 
 
 def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
@@ -626,7 +754,7 @@ def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
         git_sha="deadbeef",
         role_compatibility=["TX"],
         metadata_payload={
-            "requested_build_config": {"machine_log_detail": 1, "machine_log_stat_period_ms": 5000}
+            "requested_build_config": _high_altitude_cc_build_config_payload()
         },
         storage_path="artifacts/session-id/artifact-id/bundle.zip",
     )
@@ -646,13 +774,17 @@ def test_session_detail_page_shows_build_controls_metadata_and_build_log_link(
 
     assert response.status_code == 200
     assert "Load Config" in response.text
+    assert "Logging Policy" in response.text
+    assert "Human Log" in response.text
     assert "Machine Detail" in response.text
     assert "Detail Level" not in response.text
     assert "Stat Period (ms)" in response.text
     assert "Human-readable RTT is always disabled for these builds." in response.text
-    assert "UI builds always use packet detail so generated reports have per-packet telemetry." in response.text
-    assert "Channel Selection" not in response.text
-    assert "Config Detail Packet | Stat period 5000 ms" in response.text
+    assert "Stat period is loaded from the selected commit and carried through unchanged." in response.text
+    assert "Radio" in response.text
+    assert "Channels" in response.text
+    assert "Runtime" in response.text
+    assert "Logs human off | machine on | detail Packet | stat period 5000 ms" in response.text
     assert "requested_build_config" not in response.text
     assert "build log" in response.text
     assert "Existing Artifacts" not in response.text
@@ -736,7 +868,7 @@ def test_session_build_form_forces_packet_detail_for_high_altitude_cc(db_session
             "git_sha": "deadbeefcafebabe",
             "build_host_id": build_host.id,
             "role": "TX",
-            "build_config_json": '{"machine_log_detail":0,"machine_log_stat_period_ms":5000}',
+            "build_config_json": json.dumps(_high_altitude_cc_build_config_payload(machine_log_detail=0)),
         },
         follow_redirects=False,
     )
@@ -746,8 +878,10 @@ def test_session_build_form_forces_packet_detail_for_high_altitude_cc(db_session
     job = db_session.query(Job).filter(Job.session_id == session_id).one()
     assert artifact.metadata_payload["requested_build_config"]["machine_log_detail"] == 1
     assert artifact.metadata_payload["requested_build_config"]["machine_log_stat_period_ms"] == 5000
+    assert artifact.metadata_payload["requested_build_config"]["rf_sync_word"] == 0xD391
     assert job.payload["build_config"]["machine_log_detail"] == 1
     assert job.payload["build_config"]["machine_log_stat_period_ms"] == 5000
+    assert job.payload["build_config"]["allowlist_hz"] == [433200000, 434600000]
 
 
 def test_session_detail_page_hides_existing_artifact_assignment_when_no_ready_artifacts(
@@ -1066,10 +1200,7 @@ def test_session_live_endpoint_version_changes_when_build_job_finishes(db_sessio
             "repo_id": "high-altitude-cc",
             "git_sha": "deadbeefcafebabe",
             "build_host_id": build_host.id,
-            "build_config": {
-                "machine_log_detail": 1,
-                "machine_log_stat_period_ms": 5000,
-            },
+            "build_config": _high_altitude_cc_build_config_payload(),
         },
     )
     assert build_response.status_code == 200
@@ -1203,10 +1334,7 @@ def test_request_build_json_rejects_unknown_build_host(db_session, monkeypatch) 
             "repo_id": "high-altitude-cc",
             "git_sha": "deadbeefcafebabe",
             "build_host_id": "missing-build-host",
-            "build_config": {
-                "machine_log_detail": 1,
-                "machine_log_stat_period_ms": 5000,
-            },
+            "build_config": _high_altitude_cc_build_config_payload(),
         },
     )
 
@@ -1239,10 +1367,7 @@ def test_request_build_json_rejects_host_without_build_capability(db_session, mo
             "repo_id": "high-altitude-cc",
             "git_sha": "deadbeefcafebabe",
             "build_host_id": runtime_host.id,
-            "build_config": {
-                "machine_log_detail": 1,
-                "machine_log_stat_period_ms": 5000,
-            },
+            "build_config": _high_altitude_cc_build_config_payload(),
         },
     )
 

@@ -1134,7 +1134,8 @@ textarea {
 }
 
 .build-search-panel,
-.build-summary-panel {
+.build-summary-panel,
+.build-config-group {
   gap: 0.7rem;
   padding: 0.95rem 1rem;
   border: 1px solid color-mix(in srgb, var(--line) 88%, var(--accent-soft) 12%);
@@ -1164,6 +1165,44 @@ textarea {
 .build-role-hint,
 .build-telemetry-hint {
   margin-top: -0.16rem;
+}
+
+.build-group-header,
+.build-subsection-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.build-group-header h5,
+.build-subsection-head > span:first-child {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.build-group-header p {
+  margin: 0;
+}
+
+.build-inline-group {
+  gap: 0.65rem;
+}
+
+.build-pa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.8rem;
+}
+
+.build-mask-grid {
+  gap: 0.8rem;
+}
+
+.build-mask-row {
+  gap: 0.8rem;
 }
 
 .build-summary-meta {
@@ -2067,6 +2106,7 @@ html[data-theme="dark"] .session-screen .session-hero {
 html[data-theme="dark"] .session-build-progress,
 html[data-theme="dark"] .build-search-panel,
 html[data-theme="dark"] .build-summary-panel,
+html[data-theme="dark"] .build-config-group,
 html[data-theme="dark"] .build-config-status,
 html[data-theme="dark"] .build-policy-note,
 html[data-theme="dark"] .read-report-panel {

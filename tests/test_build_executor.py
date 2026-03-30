@@ -18,6 +18,35 @@ from rtms.shared.schemas import (
 from rtms.shared.time_sync import utc_now
 
 
+def _high_altitude_cc_build_config() -> HighAltitudeCCBuildConfig:
+    return HighAltitudeCCBuildConfig(
+        machine_log_detail=0,
+        machine_log_stat_period_ms=5000,
+        rf_bitrate_bps=76760,
+        rf_rx_bw_hz=203102,
+        rf_deviation_hz=31735,
+        rf_preamble_bytes=4,
+        rf_sync_word=0xD391,
+        rf_pa_table=[0xC2] * 8,
+        allowlist_hz=[433200000, 434600000],
+        band_min_hz=433050000,
+        band_max_hz=434790000,
+        guard_band_hz=30000,
+        exclusion_masks=[{"center_hz": 433500000, "half_bw_hz": 25000}],
+        backup_failover_holdoff_ms=15000,
+        rx_thresh_enable=1,
+        rx_min_rssi_dbm=-95,
+        rx_min_lqi=40,
+        rx_thresh_log_every=1000,
+        rx_poll_interval_ms=2,
+        tx_complete_timeout_ms=20,
+        rx_host_bridge_budget=32,
+        telem_gps_period_ms=200,
+        telem_imu_baro_period_ms=50,
+        airtime_limit_us_per_hour=306000000,
+    )
+
+
 def test_clone_url_uses_github_token_for_https_private_repo() -> None:
     executor = BuildExecutor(HostSettings(github_token="secret-token"))
     authed = executor._clone_url_with_auth("https://github.com/koutrolikos/High-Altitude-CC.git")
@@ -166,10 +195,7 @@ def _high_altitude_cc_payload() -> BuildArtifactPayload:
                 rtt_symbol="_SEGGER_RTT",
             ),
         ),
-        build_config=HighAltitudeCCBuildConfig(
-            machine_log_detail=1,
-            machine_log_stat_period_ms=5000,
-        ),
+        build_config=_high_altitude_cc_build_config(),
     )
 
 
@@ -184,6 +210,8 @@ def test_resolve_build_command_adds_high_altitude_cc_cdefs() -> None:
     assert "-DAPP_MACHINE_LOG_ENABLE=1" in cdefs
     assert "-DAPP_MACHINE_LOG_DETAIL=1" in cdefs
     assert "-DAPP_MACHINE_LOG_STAT_PERIOD_MS=5000U" in cdefs
+    assert "-DAPP_RF_SYNC_WORD=0xD391UL" in cdefs
+    assert "-DAPP_CHSEL_ALLOWLIST_HZ_LIST=433200000UL,434600000UL" in cdefs
 
 
 def test_run_build_uploads_build_log_and_cleans_workspace(tmp_path: Path) -> None:

@@ -238,6 +238,8 @@ class GitHubService:
                 if ref:
                     return []
                 raise FileNotFoundError(f"repo {owner_repo} is not accessible via the GitHub API")
+            if ref and response.status_code in {409, 422}:
+                return []
             response.raise_for_status()
             commits = response.json()
         return [self._normalize_remote_commit(item) for item in commits]

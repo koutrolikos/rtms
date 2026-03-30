@@ -70,7 +70,7 @@
                     <label>
                       <span>Commit Search</span>
                       <div class="inline-form">
-                        <input type="text" id="commit-query" data-enter-click="search-commits" placeholder="Search by branch, tag, or SHA prefix" />
+                        <input type="text" id="commit-query" data-enter-click="search-commits" placeholder="Search by branch, tag, SHA prefix, or commit message" />
                         <button type="button" class="secondary" id="search-commits">Search Commits</button>
                       </div>
                     </label>
@@ -92,17 +92,185 @@
                   </label>
                   <p class="muted build-config-status" id="build-config-status">Load a commit before queueing the build.</p>
                   <p class="muted build-policy-note">Human-readable RTT is always disabled for these builds. Machine telemetry is always enabled, and packet detail is enforced for report-ready captures.</p>
-                  <div class="grid two build-telemetry-grid">
-                    <label>
-                      <span>Machine Detail</span>
-                      <input type="text" value="Packet" readonly aria-readonly="true" />
-                    </label>
-                    <label>
-                      <span>Stat Period (ms)</span>
-                      <input type="number" id="build-machine-log-stat-period-ms" min="0" step="1" placeholder="Default" />
-                    </label>
-                  </div>
-                  <p class="field-hint build-telemetry-hint">UI builds always use packet detail so generated reports have per-packet telemetry.</p>
+                  <section class="stack build-config-group">
+                    <div class="build-group-header">
+                      <h5>Logging Policy</h5>
+                      <p class="muted">Locked by RTMS for UI-driven High-Altitude-CC builds.</p>
+                    </div>
+                    <div class="grid two build-telemetry-grid">
+                      <label>
+                        <span>Human Log</span>
+                        <input type="text" value="Disabled" readonly aria-readonly="true" />
+                      </label>
+                      <label>
+                        <span>Machine Log</span>
+                        <input type="text" value="Enabled" readonly aria-readonly="true" />
+                      </label>
+                      <label>
+                        <span>Machine Detail</span>
+                        <input type="text" value="Packet" readonly aria-readonly="true" />
+                      </label>
+                      <label>
+                        <span>Stat Period (ms)</span>
+                        <input type="number" id="build-machine-log-stat-period-ms" readonly aria-readonly="true" />
+                      </label>
+                    </div>
+                    <p class="field-hint build-telemetry-hint">Stat period is loaded from the selected commit and carried through unchanged.</p>
+                  </section>
+                  <section class="stack build-config-group">
+                    <div class="build-group-header">
+                      <h5>Radio</h5>
+                      <p class="muted">Edit the CC1101 profile values carried into the build.</p>
+                    </div>
+                    <div class="grid two build-config-grid">
+                      <label>
+                        <span>Bitrate (bps)</span>
+                        <input type="number" id="build-rf-bitrate-bps" min="1000" step="1" />
+                      </label>
+                      <label>
+                        <span>RX Bandwidth (Hz)</span>
+                        <input type="number" id="build-rf-rx-bw-hz" min="58029" max="812407" step="1" />
+                      </label>
+                      <label>
+                        <span>Deviation (Hz)</span>
+                        <input type="number" id="build-rf-deviation-hz" min="1587" max="380816" step="1" />
+                      </label>
+                      <label>
+                        <span>Preamble (bytes)</span>
+                        <select id="build-rf-preamble-bytes">
+                          <option value="2">2</option>
+                          <option value="3">3</option>
+                          <option value="4">4</option>
+                          <option value="6">6</option>
+                          <option value="8">8</option>
+                          <option value="12">12</option>
+                          <option value="16">16</option>
+                          <option value="24">24</option>
+                        </select>
+                      </label>
+                      <label class="wide-field">
+                        <span>Sync Word</span>
+                        <input type="text" id="build-rf-sync-word" inputmode="text" spellcheck="false" />
+                      </label>
+                    </div>
+                    <div class="stack build-inline-group">
+                      <div class="build-subsection-head">
+                        <span>PA Table</span>
+                        <span class="muted">Eight raw PATABLE byte values</span>
+                      </div>
+                      <div class="build-pa-grid">
+                        {% for index in range(8) %}
+                        <label>
+                          <span>PA {{ index + 1 }}</span>
+                          <input type="number" id="build-rf-pa-table-{{ index }}" min="0" max="255" step="1" />
+                        </label>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  </section>
+                  <section class="stack build-config-group">
+                    <div class="build-group-header">
+                      <h5>Channels</h5>
+                      <p class="muted">Primary and backup channel inputs plus survey exclusion masks.</p>
+                    </div>
+                    <div class="grid two build-config-grid">
+                      <label>
+                        <span>Primary Channel (Hz)</span>
+                        <input type="number" id="build-allowlist-0" min="0" step="1" />
+                      </label>
+                      <label>
+                        <span>Backup Channel (Hz)</span>
+                        <input type="number" id="build-allowlist-1" min="0" step="1" />
+                      </label>
+                      <label>
+                        <span>Band Min (Hz)</span>
+                        <input type="number" id="build-band-min-hz" min="0" step="1" />
+                      </label>
+                      <label>
+                        <span>Band Max (Hz)</span>
+                        <input type="number" id="build-band-max-hz" min="0" step="1" />
+                      </label>
+                      <label>
+                        <span>Guard Band (Hz)</span>
+                        <input type="number" id="build-guard-band-hz" min="0" max="500000" step="1" />
+                      </label>
+                      <label>
+                        <span>Failover Holdoff (ms)</span>
+                        <input type="number" id="build-backup-failover-holdoff-ms" min="0" max="600000" step="1" />
+                      </label>
+                    </div>
+                    <div class="stack build-inline-group">
+                      <div class="build-subsection-head">
+                        <span>Exclusion Masks</span>
+                        <span class="muted">Leave a row blank to keep it unused.</span>
+                      </div>
+                      <div class="stack build-mask-grid">
+                        {% for index in range(4) %}
+                        <div class="grid two build-mask-row">
+                          <label>
+                            <span>Mask {{ index + 1 }} Center (Hz)</span>
+                            <input type="number" id="build-exclusion-mask-{{ index }}-center-hz" min="0" step="1" />
+                          </label>
+                          <label>
+                            <span>Mask {{ index + 1 }} Half BW (Hz)</span>
+                            <input type="number" id="build-exclusion-mask-{{ index }}-half-bw-hz" min="0" step="1" />
+                          </label>
+                        </div>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  </section>
+                  <section class="stack build-config-group">
+                    <div class="build-group-header">
+                      <h5>Runtime</h5>
+                      <p class="muted">Thresholding, timing, bridge budget, telemetry cadence, and airtime ceiling.</p>
+                    </div>
+                    <div class="grid two build-config-grid">
+                      <label>
+                        <span>RX Thresholding</span>
+                        <select id="build-rx-thresh-enable">
+                          <option value="1">Enabled</option>
+                          <option value="0">Disabled</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>RX Min RSSI (dBm)</span>
+                        <input type="number" id="build-rx-min-rssi-dbm" min="-128" max="127" step="1" />
+                      </label>
+                      <label>
+                        <span>RX Min LQI</span>
+                        <input type="number" id="build-rx-min-lqi" min="0" max="127" step="1" />
+                      </label>
+                      <label>
+                        <span>Threshold Log Every</span>
+                        <input type="number" id="build-rx-thresh-log-every" min="1" step="1" />
+                      </label>
+                      <label>
+                        <span>RX Poll Interval (ms)</span>
+                        <input type="number" id="build-rx-poll-interval-ms" min="0" max="1000" step="1" />
+                      </label>
+                      <label>
+                        <span>TX Complete Timeout (ms)</span>
+                        <input type="number" id="build-tx-complete-timeout-ms" min="1" max="5000" step="1" />
+                      </label>
+                      <label>
+                        <span>RX Host Bridge Budget</span>
+                        <input type="number" id="build-rx-host-bridge-budget" min="1" max="256" step="1" />
+                      </label>
+                      <label>
+                        <span>Telemetry GPS Period (ms)</span>
+                        <input type="number" id="build-telem-gps-period-ms" min="1" max="60000" step="1" />
+                      </label>
+                      <label>
+                        <span>Telemetry IMU/Baro Period (ms)</span>
+                        <input type="number" id="build-telem-imu-baro-period-ms" min="1" max="60000" step="1" />
+                      </label>
+                      <label>
+                        <span>Airtime Limit (us/hour)</span>
+                        <input type="number" id="build-airtime-limit-us-per-hour" min="0" max="360000000" step="1" />
+                      </label>
+                    </div>
+                  </section>
                   <div class="stack build-summary-panel">
                     <div class="build-summary-meta">
                       <span>Build Summary</span>

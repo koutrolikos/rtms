@@ -23,7 +23,7 @@ from rtms.server.app.models.entities import (
 )
 from rtms.server.app.services import jobs as job_service
 from rtms.server.app.services.storage import FileStorage
-from rtms.shared.high_altitude_cc import HIGH_ALTITUDE_CC_REPO_ID
+from rtms.shared.high_altitude_cc import HIGH_ALTITUDE_CC_REPO_ID, normalize_high_altitude_cc_build_config
 from rtms.shared.enums import (
     ArtifactOriginType,
     ArtifactStatus,
@@ -380,6 +380,10 @@ def request_build(
 ) -> tuple[Artifact, Job]:
     if repo.id == HIGH_ALTITUDE_CC_REPO_ID and request.build_config is None:
         raise HTTPException(status_code=400, detail="high-altitude-cc builds require build_config")
+    if repo.id == HIGH_ALTITUDE_CC_REPO_ID and request.build_config is not None:
+        request = request.model_copy(
+            update={"build_config": normalize_high_altitude_cc_build_config(request.build_config)}
+        )
     session = get_session_or_404(db, request.session_id)
     validate_build_host(db, request.build_host_id)
     artifact = Artifact(

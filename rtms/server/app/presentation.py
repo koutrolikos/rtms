@@ -330,18 +330,66 @@ def _summarize_build_metadata(build_metadata: dict[str, Any]) -> list[str]:
 
 def _summarize_build_config(build_config: dict[str, Any]) -> list[str]:
     lines: list[str] = []
-    header: list[str] = []
-    detail_labels = {
-        0: "Summary",
-        1: "Packet",
-    }
-    machine_log_detail = build_config.get("machine_log_detail")
-    if machine_log_detail is not None:
-        header.append(f"Detail {detail_labels.get(machine_log_detail, machine_log_detail)}")
-    if build_config.get("machine_log_stat_period_ms") is not None:
-        header.append(f"Stat period {build_config['machine_log_stat_period_ms']} ms")
-    if header:
-        lines.append("Config " + " | ".join(header))
+    detail_labels = {0: "Summary", 1: "Packet"}
+    lines.append(
+        "Logs human off | machine on | "
+        f"detail {detail_labels.get(build_config.get('machine_log_detail'), build_config.get('machine_log_detail', '-'))}"
+        " | "
+        f"stat period {build_config.get('machine_log_stat_period_ms', '-')} ms"
+    )
+
+    radio_parts: list[str] = []
+    if build_config.get("rf_bitrate_bps") is not None:
+        radio_parts.append(f"{build_config['rf_bitrate_bps']} bps")
+    if build_config.get("rf_rx_bw_hz") is not None:
+        radio_parts.append(f"RX BW {build_config['rf_rx_bw_hz']} Hz")
+    if build_config.get("rf_deviation_hz") is not None:
+        radio_parts.append(f"Dev {build_config['rf_deviation_hz']} Hz")
+    if build_config.get("rf_preamble_bytes") is not None:
+        radio_parts.append(f"Preamble {build_config['rf_preamble_bytes']} B")
+    if build_config.get("rf_sync_word") is not None:
+        radio_parts.append(f"Sync 0x{int(build_config['rf_sync_word']):04X}")
+    if radio_parts:
+        lines.append("Radio " + " | ".join(radio_parts))
+
+    channel_parts: list[str] = []
+    allowlist = build_config.get("allowlist_hz")
+    if isinstance(allowlist, list) and allowlist:
+        channel_parts.append("Allowlist " + ", ".join(str(item) for item in allowlist))
+    band_min = build_config.get("band_min_hz")
+    band_max = build_config.get("band_max_hz")
+    if band_min is not None and band_max is not None:
+        channel_parts.append(f"Band {band_min}-{band_max} Hz")
+    if build_config.get("guard_band_hz") is not None:
+        channel_parts.append(f"Guard {build_config['guard_band_hz']} Hz")
+    exclusion_masks = build_config.get("exclusion_masks")
+    if isinstance(exclusion_masks, list):
+        channel_parts.append(f"Masks {len(exclusion_masks)}")
+    if build_config.get("backup_failover_holdoff_ms") is not None:
+        channel_parts.append(f"Failover {build_config['backup_failover_holdoff_ms']} ms")
+    if channel_parts:
+        lines.append("Channels " + " | ".join(channel_parts))
+
+    runtime_parts: list[str] = []
+    if build_config.get("rx_thresh_enable") is not None:
+        runtime_parts.append(
+            "Thresholds "
+            + ("on" if build_config.get("rx_thresh_enable") else "off")
+        )
+    if build_config.get("rx_min_rssi_dbm") is not None:
+        runtime_parts.append(f"RSSI {build_config['rx_min_rssi_dbm']} dBm")
+    if build_config.get("rx_min_lqi") is not None:
+        runtime_parts.append(f"LQI {build_config['rx_min_lqi']}")
+    if build_config.get("rx_poll_interval_ms") is not None:
+        runtime_parts.append(f"RX poll {build_config['rx_poll_interval_ms']} ms")
+    if build_config.get("tx_complete_timeout_ms") is not None:
+        runtime_parts.append(f"TX timeout {build_config['tx_complete_timeout_ms']} ms")
+    if build_config.get("telem_gps_period_ms") is not None and build_config.get("telem_imu_baro_period_ms") is not None:
+        runtime_parts.append(
+            f"Telemetry {build_config['telem_gps_period_ms']}/{build_config['telem_imu_baro_period_ms']} ms"
+        )
+    if runtime_parts:
+        lines.append("Runtime " + " | ".join(runtime_parts))
     return lines
 
 
