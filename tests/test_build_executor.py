@@ -181,7 +181,7 @@ def _high_altitude_cc_payload() -> BuildArtifactPayload:
             clone_url="https://github.com/koutrolikos/High-Altitude-CC.git",
             default_branch="dev",
             build_recipe=BuildRecipe(
-                build_command="rtms-host build-high-altitude-cc --source . --build-dir build/debug",
+                build_command="range-test-agent build-high-altitude-cc --source . --build-dir build/debug",
                 artifact_globs=[
                     "build/debug/HighAltitudeCC.elf",
                     "build/debug/HighAltitudeCC.hex",
@@ -246,7 +246,7 @@ def test_run_build_uploads_build_log_and_cleans_workspace(tmp_path: Path) -> Non
         build_dir = cwd / "build" / "debug"
         build_dir.mkdir(parents=True, exist_ok=True)
         for suffix in ("elf", "hex", "bin", "map"):
-            (build_dir / f"HighAltitudeCC.{suffix}").write_text("artifact", encoding="utf-8")
+            (build_dir / f"High-Altitude-CC.{suffix}").write_text("artifact", encoding="utf-8")
         if log_path is not None:
             log_path.write_text("build log", encoding="utf-8")
 
@@ -267,15 +267,15 @@ def test_run_build_uploads_build_log_and_cleans_workspace(tmp_path: Path) -> Non
                     created_at=utc_now(),
                     files=[
                         BundleFileEntry(
-                            path="build/debug/HighAltitudeCC.elf",
+                            path="build/debug/High-Altitude-CC.elf",
                             size_bytes=8,
                             sha256="artifact-sha",
                             kind="payload",
                         )
                     ],
                     flash=FlashSpec(
-                        flash_image_path="build/debug/HighAltitudeCC.elf",
-                        elf_path="build/debug/HighAltitudeCC.elf",
+                        flash_image_path="build/debug/High-Altitude-CC.elf",
+                        elf_path="build/debug/High-Altitude-CC.elf",
                         rtt_symbol="_SEGGER_RTT",
                     ),
                 ),

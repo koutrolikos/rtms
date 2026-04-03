@@ -9,6 +9,7 @@ from rtms.host.app.services.high_altitude_cc_build import main as build_high_alt
 from rtms.host.app.services.probes import scan_probe_inventory
 from rtms.host.app.services.runtime import HostRuntime
 from rtms.shared.enums import Role
+from rtms.shared.high_altitude_cc import HIGH_ALTITUDE_CC_DEFAULT_BUILD_DIR
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build High-Altitude-CC from a clean checkout using the host helper",
     )
     high_altitude_parser.add_argument("--source", default=".")
-    high_altitude_parser.add_argument("--build-dir", default="build/debug")
+    high_altitude_parser.add_argument("--build-dir", default=HIGH_ALTITUDE_CC_DEFAULT_BUILD_DIR)
     high_altitude_parser.add_argument("--role", choices=["tx", "rx", "tx-cw"], required=True)
     high_altitude_parser.add_argument("--app-debug", type=int, choices=[0, 1], default=1)
     high_altitude_parser.add_argument("--build-config-json")

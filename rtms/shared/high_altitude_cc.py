@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from rtms.shared.enums import Role
 from rtms.shared.schemas import (
@@ -11,6 +12,10 @@ from rtms.shared.schemas import (
 
 HIGH_ALTITUDE_CC_REPO_ID = "high-altitude-cc"
 HIGH_ALTITUDE_CC_APP_CONFIG_PATH = "Core/Inc/app_config.h"
+HIGH_ALTITUDE_CC_DEFAULT_BUILD_DIR = "build/debug"
+HIGH_ALTITUDE_CC_TARGET_NAME = "High-Altitude-CC"
+HIGH_ALTITUDE_CC_TARGET_FILENAME = f"{HIGH_ALTITUDE_CC_TARGET_NAME}.elf"
+HIGH_ALTITUDE_CC_ARTIFACT_EXTENSIONS = ("elf", "hex", "bin", "map")
 HIGH_ALTITUDE_CC_MACHINE_LOG_DETAIL_SUMMARY = 0
 HIGH_ALTITUDE_CC_MACHINE_LOG_DETAIL_PACKET = 1
 HIGH_ALTITUDE_CC_ROLE_MACROS = {
@@ -24,6 +29,26 @@ _ELSE_RE = re.compile(r"^\s*#\s*else\b")
 _ENDIF_RE = re.compile(r"^\s*#\s*endif\b")
 _DEFINE_RE = re.compile(r"^\s*#\s*define\s+(?P<macro>[A-Za-z_][A-Za-z0-9_]*)\s+(?P<value>.+?)\s*$")
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def high_altitude_cc_artifact_globs(build_dir: str = HIGH_ALTITUDE_CC_DEFAULT_BUILD_DIR) -> list[str]:
+    return [f"{build_dir}/{HIGH_ALTITUDE_CC_TARGET_NAME}.{suffix}" for suffix in HIGH_ALTITUDE_CC_ARTIFACT_EXTENSIONS]
+
+
+def high_altitude_cc_elf_glob(build_dir: str = HIGH_ALTITUDE_CC_DEFAULT_BUILD_DIR) -> str:
+    return f"{build_dir}/{HIGH_ALTITUDE_CC_TARGET_FILENAME}"
+
+
+def high_altitude_cc_cmake_build_type(build_dir: str | Path) -> str:
+    build_dir_name = Path(build_dir).name.lower()
+    if build_dir_name == "debug":
+        return "Debug"
+    if build_dir_name == "release":
+        return "Release"
+    raise ValueError(
+        "High-Altitude-CC build_dir must end with 'debug' or 'release' "
+        f"to derive the CMake build type: {build_dir}"
+    )
 
 
 def _strip_macro_value(value: str) -> str:

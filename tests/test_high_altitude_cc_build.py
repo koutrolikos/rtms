@@ -6,6 +6,7 @@ import pytest
 
 from rtms.host.app.services.high_altitude_cc_build import (
     HighAltitudeCCBuildError,
+    build_high_altitude_cc,
     patch_app_config_defaults,
 )
 from rtms.shared.schemas import HighAltitudeCCBuildConfig
@@ -169,3 +170,51 @@ def test_patch_app_config_defaults_updates_full_build_config(tmp_path: Path) -> 
     assert "#define APP_TELEM_GPS_PERIOD_MS (200U)" in updated
     assert "#define APP_REPORT_DETAIL (APP_MACHINE_LOG_DETAIL)" in updated
     assert "#define APP_REPORT_STAT_PERIOD_MS (APP_MACHINE_LOG_STAT_PERIOD_MS)" in updated
+
+
+def test_build_high_altitude_cc_uses_cmake_configure_build_flow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source_dir = tmp_path / "firmware"
+    app_config = source_dir / "Core" / "Inc" / "app_config.h"
+    app_config.parent.mkdir(parents=True)
+    app_config.write_text(
+        "#ifndef APP_ROLE_MODE\n"
+        "#define APP_ROLE_MODE (APP_ROLE_MODE_TX)\n"
+        "#endif\n"
+        "#ifndef APP_DEBUG_ENABLE\n"
+        "#define APP_DEBUG_ENABLE (1)\n"
+        "#endif\n",
+        encoding="utf-8",
+    )
+    (source_dir / "CMakeLists.txt").write_text("cmake_minimum_required(VERSION 3.20)\n", encoding="utf-8")
+    build_dir = source_dir / "build" / "debug"
+    commands: list[tuple[list[str], Path]] = []
+
+    def fake_run_command(command: list[str], *, cwd: Path) -> None:
+        commands.append((command, cwd))
+        if command[:3] == ["cmake", "--build", str(build_dir)]:
+            build_dir.mkdir(parents=True, exist_ok=True)
+            (build_dir / "High-Altitude-CC.elf").write_text("elf", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "rtms.host.app.services.high_altitude_cc_build._run_command",
+        fake_run_command,
+    )
+
+    elf_path = build_high_altitude_cc(
+        source_dir=source_dir,
+        build_dir=build_dir,
+        role="tx",
+        app_debug_enable=1,
+    )
+
+    assert elf_path == build_dir / "High-Altitude-CC.elf"
+    assert commands == [
+        (
+            ["cmake", "-S", str(source_dir), "-B", str(build_dir), "-DCMAKE_BUILD_TYPE=Debug"],
+            source_dir,
+        ),
+        (
+            ["cmake", "--build", str(build_dir), "--config", "Debug", "--parallel"],
+            source_dir,
+        ),
+    ]

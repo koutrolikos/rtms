@@ -15,7 +15,13 @@ from rtms.host.app.core.config import HostSettings
 from rtms.host.app.services.api_client import ServerClient
 from rtms.host.app.services.bundles import create_artifact_bundle
 from rtms.shared.enums import ArtifactOriginType, RawArtifactType, Role
-from rtms.shared.high_altitude_cc import HIGH_ALTITUDE_CC_REPO_ID, build_high_altitude_cc_cdefs
+from rtms.shared.high_altitude_cc import (
+    HIGH_ALTITUDE_CC_DEFAULT_BUILD_DIR,
+    HIGH_ALTITUDE_CC_REPO_ID,
+    build_high_altitude_cc_cdefs,
+    high_altitude_cc_artifact_globs,
+    high_altitude_cc_elf_glob,
+)
 from rtms.shared.schemas import BuildArtifactPayload, JobResult
 
 logger = logging.getLogger(__name__)
@@ -211,7 +217,7 @@ class BuildExecutor:
                     "--source",
                     shlex.quote("."),
                     "--build-dir",
-                    shlex.quote("build/debug"),
+                    shlex.quote(HIGH_ALTITUDE_CC_DEFAULT_BUILD_DIR),
                     "--role",
                     shlex.quote(role),
                     "--build-config-json",
@@ -220,6 +226,13 @@ class BuildExecutor:
             ),
             cdefs_extra,
         )
+
+    def _resolved_artifact_patterns(self, payload: BuildArtifactPayload) -> tuple[list[str], str | None, str | None]:
+        recipe = payload.repo.build_recipe
+        if payload.repo.id != HIGH_ALTITUDE_CC_REPO_ID:
+            return recipe.artifact_globs, recipe.elf_glob, recipe.flash_image_glob
+        elf_glob = high_altitude_cc_elf_glob()
+        return high_altitude_cc_artifact_globs(), elf_glob, elf_glob
 
     def _cleanup_success_paths(self, repo_root: Path, output_dir: Path) -> list[str]:
         removed: list[str] = []
@@ -537,19 +550,19 @@ class BuildExecutor:
             )
 
     def _collect_files(self, repo_root: Path, payload: BuildArtifactPayload) -> dict:
-        recipe = payload.repo.build_recipe
+        artifact_globs, elf_glob, flash_image_glob = self._resolved_artifact_patterns(payload)
         matched_files: list[tuple[Path, str]] = []
-        for pattern in recipe.artifact_globs:
+        for pattern in artifact_globs:
             for match in glob.glob(str(repo_root / pattern), recursive=True):
                 path = Path(match)
                 if path.is_file():
                     matched_files.append((path, str(path.relative_to(repo_root))))
         if not matched_files:
-            raise BuildFailure("artifact_files_missing", {"patterns": recipe.artifact_globs})
-        elf_path = self._first_match(repo_root, recipe.elf_glob)
-        flash_image = self._first_match(repo_root, recipe.flash_image_glob)
+            raise BuildFailure("artifact_files_missing", {"patterns": artifact_globs})
+        elf_path = self._first_match(repo_root, elf_glob)
+        flash_image = self._first_match(repo_root, flash_image_glob)
         if flash_image is None and elf_path is None:
-            raise BuildFailure("flash_image_missing", {"elf_glob": recipe.elf_glob, "flash_image_glob": recipe.flash_image_glob})
+            raise BuildFailure("flash_image_missing", {"elf_glob": elf_glob, "flash_image_glob": flash_image_glob})
         return {
             "files": matched_files,
             "elf_path": str(elf_path.relative_to(repo_root)) if elf_path else None,

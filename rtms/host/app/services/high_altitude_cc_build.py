@@ -10,7 +10,12 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from rtms.shared.high_altitude_cc import normalize_high_altitude_cc_build_config
+from rtms.shared.high_altitude_cc import (
+    HIGH_ALTITUDE_CC_DEFAULT_BUILD_DIR,
+    HIGH_ALTITUDE_CC_TARGET_FILENAME,
+    high_altitude_cc_cmake_build_type,
+    normalize_high_altitude_cc_build_config,
+)
 from rtms.shared.schemas import HighAltitudeCCBuildConfig
 
 
@@ -173,18 +178,20 @@ def build_high_altitude_cc(
         build_config=build_config,
     )
 
+    try:
+        build_type = high_altitude_cc_cmake_build_type(build_dir)
+    except ValueError as exc:
+        raise HighAltitudeCCBuildError(str(exc)) from exc
+
     configure_command = [
         cmake_bin,
         "-S",
         str(source_dir),
         "-B",
         str(build_dir),
-        "-DCMAKE_SYSTEM_NAME=Generic",
-        "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY",
-        "-DCMAKE_C_COMPILER=arm-none-eabi-gcc",
-        "-DCMAKE_ASM_COMPILER=arm-none-eabi-gcc",
+        f"-DCMAKE_BUILD_TYPE={build_type}",
     ]
-    build_command = [cmake_bin, "--build", str(build_dir), "--parallel"]
+    build_command = [cmake_bin, "--build", str(build_dir), "--config", build_type, "--parallel"]
 
     if build_config is not None:
         config = normalize_high_altitude_cc_build_config(build_config)
@@ -200,7 +207,7 @@ def build_high_altitude_cc(
     _run_command(configure_command, cwd=source_dir)
     _run_command(build_command, cwd=source_dir)
 
-    elf_path = build_dir / "HighAltitudeCC.elf"
+    elf_path = build_dir / HIGH_ALTITUDE_CC_TARGET_FILENAME
     if not elf_path.exists():
         raise HighAltitudeCCBuildError(f"expected build output missing: {elf_path}")
     print(str(elf_path))
@@ -210,7 +217,7 @@ def build_high_altitude_cc(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build High-Altitude-CC from a clean checkout")
     parser.add_argument("--source", default=".")
-    parser.add_argument("--build-dir", default="build/debug")
+    parser.add_argument("--build-dir", default=HIGH_ALTITUDE_CC_DEFAULT_BUILD_DIR)
     parser.add_argument("--role", choices=sorted(ROLE_MACROS), required=True)
     parser.add_argument("--app-debug", type=int, choices=[0, 1], default=1)
     parser.add_argument("--build-config-json")
