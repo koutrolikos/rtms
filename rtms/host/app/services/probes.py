@@ -240,7 +240,7 @@ def _discover_windows_probes() -> list[ConnectedProbe]:
             "-Command",
             (
                 "Get-CimInstance Win32_PnPEntity "
-                "| Where-Object { $_.PNPDeviceID -like 'USB\\\\VID_0483&PID_*' } "
+                "| Where-Object { $_.PNPDeviceID -like 'USB\VID_0483&PID_*' } "
                 "| Select-Object Name, Manufacturer, PNPDeviceID "
                 "| ConvertTo-Json -Compress"
             ),
