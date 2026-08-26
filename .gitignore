@@ -1,4 +1,14 @@
 .venv/
+.ven/
+.env
+.env.*
+!.env.example
+secrets*.json
+credentials*.json
+*.pem
+*.key
+*.p12
+*.pfx
 __pycache__/
 .pytest_cache/
 .mypy_cache/
